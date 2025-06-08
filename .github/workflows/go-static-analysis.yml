@@ -22,18 +22,22 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20'
+          go-version: '1.20' # Ensure this Go version is compatible with your chosen golangci-lint version
           
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
+      # REMOVE the manual installation step for golangci-lint:
+      # - name: Install golangci-lint
+      #   run: |
+      #     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
           
       - name: Run lint and report issues
         uses: reviewdog/action-golangci-lint@v2
+        continue-on-error: true # Ensures subsequent auto-fixing steps run even if linters find issues
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          fail_on_error: false
+          fail_level: error # Configures reviewdog's reporting level
+          golangci_lint_version: v1.53.3 # Explicitly tell the action which version of golangci-lint to use
+          # Ensure your .golangci.yml is compatible with this version
           
       - name: Run gofmt to fix formatting issues
         run: |
