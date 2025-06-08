@@ -41,7 +41,8 @@ jobs:
           
       - name: Run gofmt to fix formatting issues
         run: |
-          go fmt ./...
+          go fmt ./code/...
+          
           
       - name: Run goimports to fix imports
         run: |
