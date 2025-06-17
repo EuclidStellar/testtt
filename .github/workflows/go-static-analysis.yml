@@ -76,35 +76,51 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Check for js-code/package.json
-        id: check_js_package
+      - name: Check for JS project files
+        id: check_js_files
         run: |
           if [ -f "js-code/package.json" ]; then
             echo "js_package_exists=true" >> $GITHUB_OUTPUT
             echo "Found js-code/package.json"
+            if [ -f "js-code/package-lock.json" ]; then
+              echo "js_lock_exists=true" >> $GITHUB_OUTPUT
+              echo "Found js-code/package-lock.json"
+            else
+              echo "js_lock_exists=false" >> $GITHUB_OUTPUT
+              echo "js-code/package-lock.json NOT found."
+            fi
           else
             echo "js_package_exists=false" >> $GITHUB_OUTPUT
-            echo "js-code/package.json not found. Skipping npm ci and caching."
+            echo "js_lock_exists=false" >> $GITHUB_OUTPUT # Ensure js_lock_exists is also false
+            echo "js-code/package.json not found."
           fi
 
-      - name: Set up Node.js (with caching if package.json exists)
-        if: steps.check_js_package.outputs.js_package_exists == 'true'
+      - name: Set up Node.js with caching (if package-lock.json exists)
+        if: steps.check_js_files.outputs.js_lock_exists == 'true'
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'npm'
           cache-dependency-path: js-code/package-lock.json
 
-      - name: Set up Node.js (no caching if package.json does not exist)
-        if: steps.check_js_package.outputs.js_package_exists == 'false'
+      - name: Set up Node.js without caching (if no package-lock.json)
+        if: steps.check_js_files.outputs.js_lock_exists == 'false'
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Install JS dependencies (if package.json exists)
-        if: steps.check_js_package.outputs.js_package_exists == 'true'
+      - name: Install JS dependencies with npm ci (if package-lock.json exists)
+        if: steps.check_js_files.outputs.js_lock_exists == 'true'
         run: npm ci
         working-directory: ./js-code
+
+      - name: Install JS dependencies with npm install (if package.json exists but no lock file)
+        if: steps.check_js_files.outputs.js_package_exists == 'true' && steps.check_js_files.outputs.js_lock_exists == 'false'
+        run: npm install # This will generate a package-lock.json
+        working-directory: ./js-code
+        # Note: The generated package-lock.json from this step will not be committed by the workflow.
+        # For caching to work on subsequent runs, you should run 'npm install' locally in 'js-code/'
+        # and commit the generated 'package-lock.json'.
 
       - name: Run ESLint and report issues (JS)
         uses: reviewdog/action-eslint@v1
