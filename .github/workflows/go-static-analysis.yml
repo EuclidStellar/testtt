@@ -79,19 +79,18 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18' # Or your preferred Node.js version
+          cache: 'npm' # Add npm caching
+          cache-dependency-path: js-code/package-lock.json # Or js-code/yarn.lock
 
-      # Optional: Install project dependencies if you have a package.json in js-code
-      # - name: Install JS dependencies
-      #   if: hashFiles('js-code/package.json') != ''
-      #   run: npm ci
-      #   working-directory: ./js-code
+      - name: Install JS dependencies
+        run: npm ci
+        working-directory: ./js-code
 
       - name: Run ESLint and report issues (JS)
         uses: reviewdog/action-eslint@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review # Reports issues as PR review comments
-          eslint_flags: 'js-code/**/*.js js-code/**/*.jsx' # Lint files in js-code directory
-          fail_on_error: true # Fails the check if ESLint finds errors
-          # workdir: '.' # Assumes .eslintrc.json is at the root or ESLint can find it.
-                         # If .eslintrc.json is in js-code/, set workdir: ./js-code and adjust eslint_flags
+          eslint_flags: '**/*.js **/*.jsx' # Lint files relative to workdir
+          fail_level: error # Replaces deprecated fail_on_error
+          workdir: ./js-code # Set working directory for ESLint action

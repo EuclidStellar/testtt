@@ -1,17 +1,15 @@
 {
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true
+  "name": "js-code",
+  "version": "1.0.0",
+  "description": "JavaScript code for static analysis",
+  "main": "main.js",
+  "scripts": {
+    "lint": "eslint . --ext .js,.jsx"
   },
-  "extends": "eslint:recommended",
-  "parserOptions": {
-    "ecmaVersion": "latest",
-    "sourceType": "module"
-  },
-  "rules": {
-    "no-unused-vars": "warn",
-    "no-console": "off",
-    "semi": ["error", "always"]
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.0.0"
   }
 }
