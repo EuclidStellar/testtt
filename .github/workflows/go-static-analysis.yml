@@ -1,14 +1,17 @@
-name: Go Static Analysis
+name: Static Analysis
 
 on:
   pull_request:
     branches: [ main ]
     paths:
       - '**.go'
+      - '**.js' # Add JS files
+      - '**.jsx' # Add JSX files
+      - '.github/workflows/go-static-analysis.yml' # Trigger on workflow changes too
 
 jobs:
-  lint:
-    name: Static Analysis
+  lint_and_fix_go: # Renamed for clarity, was 'lint'
+    name: Go Static Analysis & Auto-fix
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -17,53 +20,78 @@ jobs:
       - uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
+          token: ${{ secrets.GITHUB_TOKEN }} # Token for checkout to push later
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20' # Ensure this Go version is compatible with your chosen golangci-lint version
-          
+          go-version: '1.20'
+
       - name: Initialize Go module in ./code
         run: |
           go mod init github.com/euclidstellar/testtt
           go mod tidy
         working-directory: ./code
-          
-      # REMOVE the manual installation step for golangci-lint:
-      # - name: Install golangci-lint
-      #   run: |
-      #     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
-          
-      - name: Run lint and report issues
+
+      - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
-        continue-on-error: true # Ensures subsequent auto-fixing steps run even if linters find issues
+        continue-on-error: true
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          fail_level: error # Configures reviewdog's reporting level
-          golangci_lint_version: v1.53.3 # Explicitly tell the action which version of golangci-lint to use
-          workdir: ./code # Specify the working directory for golangci-lint
-          # Ensure your .golangci.yml is compatible with this version
-          
-      - name: Run gofmt to fix formatting issues
-        run: go fmt ./...
-        working-directory: ./code # Run gofmt within the code directory
-          
-      - name: Run goimports to fix imports
+          fail_level: error
+          golangci_lint_version: v1.53.3
+          workdir: ./code
+          # .golangci.yml is expected in the root or ./code, ensure it's accessible
+          # If .golangci.yml is in root, golangci-lint will find it when run from ./code
+
+      # REMOVED: - name: Run gofmt to fix formatting issues
+
+      - name: Run goimports to fix imports (Go)
         run: |
           go install golang.org/x/tools/cmd/goimports@latest
           goimports -w $(find . -type f -name '*.go' | grep -v /vendor/)
-        working-directory: ./code # Run goimports within the code directory
-          
-      - name: Commit and push changes if any
+        working-directory: ./code
+
+      - name: Commit and push Go changes if any
         run: |
-          git config --global user.name 'GitHub Actions'
+          git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'actions@github.com'
-          git add -A
+          # Add all changes, including go.mod, go.sum, and any .go files modified by goimports
+          git add -A 
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No Go changes to commit"
           else
-            git commit -m "Auto-fix code formatting and style issues"
+            git commit -m "style: Auto-fix Go code (imports, go.mod)"
             git push
           fi
+
+  lint_js:
+    name: JavaScript Static Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Read access to checkout code
+      pull-requests: write # Write access to post PR comments
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18' # Or your preferred Node.js version
+
+      # Optional: Install project dependencies if you have a package.json in js-code
+      # - name: Install JS dependencies
+      #   if: hashFiles('js-code/package.json') != ''
+      #   run: npm ci
+      #   working-directory: ./js-code
+
+      - name: Run ESLint and report issues (JS)
+        uses: reviewdog/action-eslint@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review # Reports issues as PR review comments
+          eslint_flags: 'js-code/**/*.js js-code/**/*.jsx' # Lint files in js-code directory
+          fail_on_error: true # Fails the check if ESLint finds errors
+          # workdir: '.' # Assumes .eslintrc.json is at the root or ESLint can find it.
+                         # If .eslintrc.json is in js-code/, set workdir: ./js-code and adjust eslint_flags
