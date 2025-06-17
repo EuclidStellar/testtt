@@ -127,6 +127,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          eslint_flags: '**/*.js **/*.jsx' # Lint files relative to workdir
+          eslint_flags: '**/*.js **/*.jsx --no-error-on-unmatched-pattern' # Added flag
           fail_level: error
-          workdir: ./js-code # Assumes JS files and .eslintrc.json are in js-code/
+          workdir: ./js-code
