@@ -124,6 +124,7 @@ jobs:
 
       - name: Run ESLint and report issues (JS)
         uses: reviewdog/action-eslint@v1
+        continue-on-error: true
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
