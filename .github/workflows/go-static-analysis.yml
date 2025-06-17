@@ -27,9 +27,15 @@ jobs:
         with:
           go-version: '1.20'
 
-      - name: Initialize Go module in ./code
+      - name: Initialize Go module in ./code if not present, then tidy
         run: |
-          go mod init github.com/euclidstellar/testtt
+          if [ ! -f go.mod ]; then
+            echo "go.mod not found, initializing module..."
+            go mod init github.com/euclidstellar/testtt
+          else
+            echo "go.mod found, skipping initialization."
+          fi
+          echo "Running go mod tidy..."
           go mod tidy
         working-directory: ./code
 
@@ -70,14 +76,33 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Check for js-code/package.json
+        id: check_js_package
+        run: |
+          if [ -f "js-code/package.json" ]; then
+            echo "js_package_exists=true" >> $GITHUB_OUTPUT
+            echo "Found js-code/package.json"
+          else
+            echo "js_package_exists=false" >> $GITHUB_OUTPUT
+            echo "js-code/package.json not found. Skipping npm ci and caching."
+          fi
+
+      - name: Set up Node.js (with caching if package.json exists)
+        if: steps.check_js_package.outputs.js_package_exists == 'true'
         uses: actions/setup-node@v3
         with:
-          node-version: '18' # Or your preferred Node.js version
-          cache: 'npm' # Add npm caching
-          cache-dependency-path: js-code/package-lock.json # Or js-code/yarn.lock
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: js-code/package-lock.json
 
-      - name: Install JS dependencies
+      - name: Set up Node.js (no caching if package.json does not exist)
+        if: steps.check_js_package.outputs.js_package_exists == 'false'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install JS dependencies (if package.json exists)
+        if: steps.check_js_package.outputs.js_package_exists == 'true'
         run: npm ci
         working-directory: ./js-code
 
@@ -85,7 +110,7 @@ jobs:
         uses: reviewdog/action-eslint@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-review # Reports issues as PR review comments
+          reporter: github-pr-review
           eslint_flags: '**/*.js **/*.jsx' # Lint files relative to workdir
-          fail_level: error # Replaces deprecated fail_on_error
-          workdir: ./js-code # Set working directory for ESLint action
+          fail_level: error
+          workdir: ./js-code # Assumes JS files and .eslintrc.json are in js-code/
