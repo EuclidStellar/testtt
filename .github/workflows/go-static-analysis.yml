@@ -39,6 +39,21 @@ jobs:
           go mod tidy
         working-directory: ./code
 
+        # test check 
+      - name: Run golangci-lint with --fix and suggest fixes (Go)
+        run: |
+          golangci-lint run --fix --out-format=diff > golangci-fix.diff || true
+        working-directory: ./code
+
+      - name: Post Go suggestions to PR (reviewdog)
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: golangci-lint
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          diff: ./code/golangci-fix.diff
+          filter_mode: added
+          fail_on_error: false
+
       - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
         continue-on-error: true
