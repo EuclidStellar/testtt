@@ -40,13 +40,13 @@ jobs:
 
       - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
+        continue-on-error: true   # Moved to the correct indentation level
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-review # Post comments to the PR
-          fail_level: error         # Let reviewdog know what an error is...
-          continue-on-error: true   # ...but force the step to pass for a green tick.
-          workdir: ./code           # Run in the 'code' subdirectory
-          # The action will use the .golangci.yml file from the repo root automatically.
+          reporter: github-pr-review
+          fail_level: error
+          workdir: ./code
+          golangci_lint_version: v1.53.3 # Added back to use the compatible version
 
   lint_js:
     name: JavaScript Static Analysis
