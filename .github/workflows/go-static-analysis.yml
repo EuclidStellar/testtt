@@ -10,16 +10,17 @@ on:
       - '.github/workflows/go-static-analysis.yml' # Trigger on workflow changes too
 
 jobs:
-  lint_go: # Renamed for clarity
-    name: Go Static Analysis
+  lint_and_fix_go: # Renamed for clarity, was 'lint'
+    name: Go Static Analysis & Auto-fix
     runs-on: ubuntu-latest
     permissions:
-      contents: read          # Read access to checkout code
-      pull-requests: write   # Write access to post PR comments
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }} # Token for checkout to push later
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -30,13 +31,14 @@ jobs:
         run: |
           if [ ! -f go.mod ]; then
             echo "go.mod not found, initializing module..."
-            go mod init github.com/EuclidStellar/testtt
+            go mod init github.com/euclidstellar/testtt
           else
             echo "go.mod found, skipping initialization."
           fi
           echo "Running go mod tidy..."
           go mod tidy
         working-directory: ./code
+
 
       - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
@@ -45,8 +47,26 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
           fail_level: error
+          golangci_lint_version: v1.53.3
           workdir: ./code
-          golangci_lint_version: v1.59.1 # Upgraded to a more recent version
+          # .golangci.yml is expected in the root or ./code, ensure it's accessible
+          # If .golangci.yml is in root, golangci-lint will find it when run from ./code
+
+      # REMOVED: - name: Run gofmt to fix formatting issues
+
+
+      - name: Commit and push Go changes if any
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          # Add all changes, including go.mod, go.sum, and any .go files modified by goimports
+          git add -A 
+          if git diff --staged --quiet; then
+            echo "No Go changes to commit"
+          else
+            git commit -m "style: Auto-fix Go code (imports, go.mod)"
+            git push
+          fiMore actions
 
   lint_js:
     name: JavaScript Static Analysis
