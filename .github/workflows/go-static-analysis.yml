@@ -44,8 +44,8 @@ jobs:
         with:
           # It's good practice to use the same version as your other step
           version: v1.53.3
-          # Override the default 'run' command to just install the binary
-          args: version
+          # Only install the binary, don't run it.
+          install-only: true
 
       - name: Run golangci-lint with --fix and suggest fixes (Go)
         run: |
