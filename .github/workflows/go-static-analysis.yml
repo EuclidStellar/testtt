@@ -1,4 +1,4 @@
-name: Static Analysis
+name: Static AnalysisMore actions
 
 on:
   pull_request:
@@ -39,7 +39,6 @@ jobs:
           go mod tidy
         working-directory: ./code
 
-
       - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
         continue-on-error: true
@@ -66,7 +65,7 @@ jobs:
           else
             git commit -m "style: Auto-fix Go code (imports, go.mod)"
             git push
-          fiMore actions
+          fi
 
   lint_js:
     name: JavaScript Static Analysis
