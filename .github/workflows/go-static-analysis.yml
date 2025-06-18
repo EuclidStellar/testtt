@@ -40,13 +40,13 @@ jobs:
 
       - name: Run lint and report issues (Go)
         uses: reviewdog/action-golangci-lint@v2
-        continue-on-error: true   # Moved to the correct indentation level
+        continue-on-error: true
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
           fail_level: error
           workdir: ./code
-          golangci_lint_version: v1.53.3 # Added back to use the compatible version
+          golangci_lint_version: v1.59.1 # Upgraded to a more recent version
 
   lint_js:
     name: JavaScript Static Analysis
