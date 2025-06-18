@@ -40,12 +40,9 @@ jobs:
         working-directory: ./code
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          # It's good practice to use the same version as your other step
-          version: v1.53.3
-          # Only install the binary, don't run it.
-          install-only: true
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Run golangci-lint with --fix and suggest fixes (Go)
         run: |
