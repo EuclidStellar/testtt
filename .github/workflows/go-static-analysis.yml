@@ -39,7 +39,12 @@ jobs:
           go mod tidy
         working-directory: ./code
 
-        # test check 
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          # It's good practice to use the same version as your other step
+          version: v1.53.3
+
       - name: Run golangci-lint with --fix and suggest fixes (Go)
         run: |
           golangci-lint run --fix --out-format=diff > golangci-fix.diff || true
