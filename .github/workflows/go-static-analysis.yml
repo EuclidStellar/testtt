@@ -7,6 +7,11 @@ on:
       - '**.go'
       - '.github/workflows/go-static-analysis.yml'
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   staticcheck:
     name: Staticcheck (Go)
