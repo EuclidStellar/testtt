@@ -10,7 +10,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   staticcheck:
@@ -28,32 +27,20 @@ jobs:
         run: |
           cd code
           if [ ! -f go.mod ]; then
-            echo "go.mod not found, initializing module..."
             go mod init github.com/${GITHUB_REPOSITORY}
-          else
-            echo "go.mod found, skipping init."
           fi
           go mod tidy
 
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
-      - name: Run staticcheck and prepare comment
-        run: |
-          cd code
-          staticcheck ./... > ../staticcheck-output.txt || true
-          cd ..
-          if [ ! -s staticcheck-output.txt ]; then
-            echo "✅ This code has no static issues." > staticcheck-output.txt
-          fi
-
-      - name: Post staticcheck results as PR comment
-        uses: peter-evans/create-or-update-comment@v4
+      - name: Run staticcheck with reviewdog (inline comments)
+        uses: reviewdog/action-staticcheck@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body-file: staticcheck-output.txt
-          edit-mode: replace
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          tool_name: staticcheck
+          workdir: ./code
 
   lint_js:
     name: JavaScript Static Analysis
