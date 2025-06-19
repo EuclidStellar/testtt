@@ -35,7 +35,7 @@ jobs:
         run: |
           echo "--- Installing Ollama ---"
           # Download and execute the Ollama installation script for amd64 architecture.
-          curl -fsSL [https://ollama.com/install.sh](https://ollama.com/install.sh) | sh
+          curl -fsSL https://ollama.com/install.sh | sh
           echo "Ollama installation complete."
 
       - name: Start Ollama Service, Pull Model, and Prepare for Review
