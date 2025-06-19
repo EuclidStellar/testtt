@@ -17,144 +17,82 @@ permissions:
   issues: write # Also useful for general issue comments
 
 jobs:
-  setup_and_download_model:
-    name: Setup Ollama and Download qwen3:14b
-    runs-on: ubuntu-latest # GitHub-hosted runner with required specifications
+  # Combined job for setup, download, and PR review
+  ollama_workflow:
+    name: Ollama Setup, Model Download, and PR Review
+    # This job runs for both pull_request and workflow_dispatch events
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for `git diff` later in the PR review job
+          fetch-depth: 0 # Required for `git diff` later
 
       - name: Install Ollama (amd64 bundle)
         id: install_ollama
         run: |
           echo "--- Installing Ollama ---"
           # Download and execute the Ollama installation script for amd64 architecture.
-          # This script handles setting up Ollama as a systemd service or running it directly.
           curl -fsSL https://ollama.com/install.sh | sh
           echo "Ollama installation complete."
 
-      - name: Start Ollama Service and Pull Model
-        id: pull_and_load_model
-        # We need to run Ollama in the background for the duration of these steps.
-        # nohup detaches the process from the terminal, and '&' sends it to background.
+      - name: Start Ollama Service, Pull Model, and Prepare for Review
+        id: setup_ollama_and_pull_model
+        # Run Ollama in the background for the duration of the job
         run: |
           echo "--- Starting Ollama service in background ---"
-          # The install script usually starts the service, but explicitly run it to ensure it's active.
-          # Redirect output to a log file for debugging.
           nohup ollama serve &> ollama_serve.log &
-          OLLAMA_PID=$! # Capture the PID of the background process
+          OLLAMA_PID=$!
           echo "Ollama server PID: $OLLAMA_PID"
 
           echo "Waiting for Ollama service to be ready..."
-          # Poll the Ollama API endpoint until it responds, indicating the service is up.
           until curl http://localhost:11434/api/tags > /dev/null 2>&1; do
             sleep 1
           done
           echo "Ollama service is ready at http://localhost:11434."
 
           echo "--- Pulling qwen3:14b model ---"
-          # Record start time for download
           START_TIME=$(date +%s)
-          # Execute the ollama pull command to download the model.
           ollama pull qwen3:14b
-          # Record end time for download
           END_TIME=$(date +%s)
           DOWNLOAD_DURATION=$((END_TIME - START_TIME))
           echo "::notice file=ollama_pull_duration.log::Model download time: ${DOWNLOAD_DURATION} seconds"
-          # Store duration as a job output to be accessible by other steps/jobs
           echo "download_duration=${DOWNLOAD_DURATION}" >> $GITHUB_OUTPUT
 
-          echo "--- Running a test inference to measure initial load time ---"
-          # The first 'ollama run' command for a model after pulling will trigger
-          # its loading into memory. We measure this first inference time.
-          START_LOAD_TIME=$(date +%s)
-          # Run a simple prompt. `|| true` prevents the step from failing if the inference itself has a minor issue.
-          ollama run qwen3:14b "Say hello!" || true
-          END_LOAD_TIME=$(date +%s)
-          LOAD_DURATION=$((END_LOAD_TIME - START_LOAD_TIME))
-          echo "::notice file=ollama_load_duration.log::Model initial load and first inference time: ${LOAD_DURATION} seconds"
-          # Store duration as a job output
-          echo "load_duration=${LOAD_DURATION}" >> $GITHUB_OUTPUT
-
-          echo "--- Stopping Ollama service ---"
-          # Kill the background Ollama process using its PID.
-          kill $OLLAMA_PID
-          echo "Ollama service stopped."
+          # Store PID for later cleanup in the same job
+          echo "ollama_pid=$OLLAMA_PID" >> $GITHUB_OUTPUT
         env:
-          # Set OLLAMA_HOST for clarity, though default localhost is usually fine.
           OLLAMA_HOST: 0.0.0.0:11434
 
-      - name: Display Measured Durations
+      - name: Display Measured Download Duration
         run: |
           echo "-------------------------------------------------------------------"
           echo "Summary of Ollama Model Operation Times:"
-          echo "Model Download Duration: ${{ steps.pull_and_load_model.outputs.download_duration }} seconds"
-          echo "Model Initial Load & First Inference Duration: ${{ steps.pull_and_load_model.outputs.load_duration }} seconds"
+          echo "Model Download Duration: ${{ steps.setup_ollama_and_pull_model.outputs.download_duration }} seconds"
+          echo "Note: Initial model load time will occur during the first inference (PR review)."
           echo "-------------------------------------------------------------------"
-
-  pr_review_with_ollama:
-    name: Review Pull Request with Ollama
-    # This job depends on the previous job to ensure Ollama and the model are ready.
-    needs: setup_and_download_model
-    # This job only runs if the workflow was triggered by a pull_request event.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          # Fetch full history to accurately calculate diff against base branch.
-          fetch-depth: 0
-
-      - name: Install Ollama for PR Review Job
-        # Ollama needs to be installed again in this new job's environment.
-        run: |
-          echo "--- Installing Ollama for PR review ---"
-          curl -fsSL https://ollama.com/install.sh | sh
-          echo "Ollama installed for PR review."
-
-      - name: Start Ollama Service for PR Review
-        run: |
-          echo "--- Starting Ollama service for PR review in background ---"
-          nohup ollama serve &> ollama_review_serve.log &
-          OLLAMA_REVIEW_PID=$!
-          echo "Ollama review server PID: $OLLAMA_REVIEW_PID"
-
-          echo "Waiting for Ollama service to be ready for review..."
-          until curl http://localhost:11434/api/tags > /dev/null 2>&1; do
-            sleep 1
-          done
-          echo "Ollama service is ready for review."
-        env:
-          OLLAMA_HOST: 0.0.0.0:11434
 
       - name: Get Git Diff for Pull Request
         id: get_diff
+        # Only run this step if the workflow was triggered by a pull_request event
+        if: github.event_name == 'pull_request'
         run: |
           echo "--- Generating Git Diff ---"
-          # `github.base_ref` is the target branch (e.g., 'main')
-          # `github.head_ref` is the branch with changes (e.g., 'feature-branch')
-          # `origin/` prefix is crucial as GitHub Actions checkouts are usually bare.
           DIFF_CONTENT=$(git diff "origin/${{ github.base_ref }}" "origin/${{ github.head_ref }}")
-
-          # Save the diff to a file, especially for large diffs, to avoid command line limits.
           echo "$DIFF_CONTENT" > pr_diff.txt
           echo "Git diff generated and saved to pr_diff.txt."
 
       - name: Review PR with Ollama and Custom Prompt
-        id: review_with_ollama # Added ID to access output
+        id: review_with_ollama
+        # Only run this step if the workflow was triggered by a pull_request event
+        if: github.event_name == 'pull_request'
         run: |
           DIFF_FILE_PATH="pr_diff.txt"
-          # Check if the diff file exists and is not empty.
           if [ -f "$DIFF_FILE_PATH" ] && [ -s "$DIFF_FILE_PATH" ]; then
             PR_DIFF=$(cat "$DIFF_FILE_PATH")
 
-            # Define your custom prompt here.
-            # Using a multi-line string for better readability.
             CUSTOM_PROMPT="You are an expert code reviewer. Your task is to analyze the provided git diff, identify potential issues, suggest improvements, and summarize the key changes. Pay close attention to:
             - Readability and code style adherence.
             - Potential bugs or edge cases.
@@ -171,15 +109,13 @@ jobs:
             Provide your review in a concise and actionable manner, using markdown formatting including code blocks where necessary. Start with a brief summary, then list specific findings and suggestions."
 
             echo "--- Sending diff to Ollama for review ---"
-            # Pipe the custom prompt into `ollama run`
             REVIEW_RESULT=$(echo "$CUSTOM_PROMPT" | ollama run qwen3:14b)
 
             echo "--- Ollama PR Review Result ---"
-            echo "::group::Ollama Review Output" # Group output in GitHub Actions logs
+            echo "::group::Ollama Review Output"
             echo "$REVIEW_RESULT"
             echo "::endgroup::"
 
-            # Set the REVIEW_RESULT as a step output so it can be accessed by subsequent steps.
             echo "review_result<<EOF" >> $GITHUB_OUTPUT
             echo "$REVIEW_RESULT" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
@@ -187,6 +123,8 @@ jobs:
           else
             echo "No diff content found or diff file is empty. Skipping PR review."
           fi
+        env:
+          OLLAMA_HOST: 0.0.0.0:11434 # Ensure Ollama host is set for the run command
 
       - name: Create PR Comment
         uses: actions/github-script@v6
@@ -203,20 +141,18 @@ jobs:
             } else {
               console.log('No review content generated. Skipping PR comment.');
             }
-            
-        
-          # Passing the result via step output directly, no need for env if using github-script directly.
-          # REVIEW_RESULT: "${{ steps.review_with_ollama.outputs.review_result }}"
-        if: always() && github.event_name == 'pull_request' && steps.review_with_ollama.outputs.review_result != '' # Only create comment if there's a PR and review content
+        if: always() && github.event_name == 'pull_request' && steps.review_with_ollama.outputs.review_result != ''
 
       - name: Stop Ollama Service (Cleanup)
         # Ensure Ollama process is killed even if previous steps fail.
         if: always()
         run: |
-          echo "--- Stopping Ollama service for PR review ---"
-          if pgrep -x "ollama" > /dev/null; then
-            pkill ollama
-            echo "Ollama service stopped."
+          echo "--- Stopping Ollama service ---"
+          # Retrieve the PID stored earlier in setup_ollama_and_pull_model step outputs
+          OLLAMA_PID="${{ steps.setup_ollama_and_pull_model.outputs.ollama_pid }}"
+          if [ -n "$OLLAMA_PID" ] && ps -p "$OLLAMA_PID" > /dev/null; then
+            kill "$OLLAMA_PID"
+            echo "Ollama service with PID $OLLAMA_PID stopped."
           else
             echo "Ollama service not running or already stopped."
           fi
