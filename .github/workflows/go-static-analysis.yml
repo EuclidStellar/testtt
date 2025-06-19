@@ -1,71 +1,54 @@
-name: Static AnalysisMore actions
+name: Go Static Analysis
 
 on:
   pull_request:
     branches: [ main ]
     paths:
       - '**.go'
-      - '**.js' # Add JS files
-      - '**.jsx' # Add JSX files
-      - '.github/workflows/go-static-analysis.yml' # Trigger on workflow changes too
+      - '.github/workflows/go-static-analysis.yml'
 
 jobs:
-  lint_and_fix_go: # Renamed for clarity, was 'lint'
-    name: Go Static Analysis & Auto-fix
+  staticcheck:
+    name: Staticcheck (Go)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }} # Token for checkout to push later
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20'
+          go-version: '1.22'
 
-      - name: Initialize Go module in ./code if not present, then tidy
+      - name: Ensure go.mod exists and tidy
         run: |
+          cd code
           if [ ! -f go.mod ]; then
             echo "go.mod not found, initializing module..."
-            go mod init github.com/euclidstellar/testtt
+            go mod init github.com/${GITHUB_REPOSITORY}
           else
-            echo "go.mod found, skipping initialization."
+            echo "go.mod found, skipping init."
           fi
-          echo "Running go mod tidy..."
           go mod tidy
-        working-directory: ./code
 
-      - name: Run lint and report issues (Go)
-        uses: reviewdog/action-golangci-lint@v2
-        continue-on-error: true
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-review
-          fail_level: error
-          golangci_lint_version: v1.53.3
-          workdir: ./code
-          # .golangci.yml is expected in the root or ./code, ensure it's accessible
-          # If .golangci.yml is in root, golangci-lint will find it when run from ./code
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
-      # REMOVED: - name: Run gofmt to fix formatting issues
-
-
-      - name: Commit and push Go changes if any
+      - name: Run staticcheck and prepare comment
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'actions@github.com'
-          # Add all changes, including go.mod, go.sum, and any .go files modified by goimports
-          git add -A 
-          if git diff --staged --quiet; then
-            echo "No Go changes to commit"
-          else
-            git commit -m "style: Auto-fix Go code (imports, go.mod)"
-            git push
+          cd code
+          staticcheck ./... > ../staticcheck-output.txt || true
+          cd ..
+          if [ ! -s staticcheck-output.txt ]; then
+            echo "✅ This code has no static issues." > staticcheck-output.txt
           fi
+
+      - name: Post staticcheck results as PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-file: staticcheck-output.txt
+          edit-mode: replace
 
   lint_js:
     name: JavaScript Static Analysis
