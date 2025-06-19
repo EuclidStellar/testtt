@@ -16,50 +16,44 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    strategy:
-      matrix:
-        go-version: ['1.22' ] # Configurable Go versions
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: '1.22'
 
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
-            **/go.sum
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+            ./code/go.sum
+          key: ${{ runner.os }}-go-${{ hashFiles('./code/go.sum') }}
 
-      - name: Find all Go modules
-        id: find-modules
+      - name: Ensure Go module exists and tidy
         run: |
-          find . -type f -name 'go.mod' | sed 's|/go.mod||' > modules.txt
-          cat modules.txt
+          if [ ! -f go.mod ]; then
+            go mod init github.com/${{ github.repository }}
+          fi
+          go mod tidy
+        working-directory: ./code
 
       - name: Install golangci-lint
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
-      - name: Lint all Go modules with golangci-lint
+      - name: Lint Go code with golangci-lint
         run: |
-          while read moddir; do
-            echo "==> Linting $moddir"
-            if [ -f "$moddir/.golangci.yml" ]; then
-              config="--config $moddir/.golangci.yml"
-            elif [ -f ".golangci.yml" ]; then
-              config="--config .golangci.yml"
-            else
-              config=""
-            fi
-            golangci-lint run $config --out-format=github-actions
-          done < modules.txt
-        shell: bash
+          if [ -f .golangci.yml ]; then
+            config="--config .golangci.yml"
+          else
+            config=""
+          fi
+          golangci-lint run $config --out-format=github-actions
+        working-directory: ./code
 
       - name: Run golangci-lint via reviewdog (PR review)
         uses: reviewdog/action-golangci-lint@v2
@@ -68,26 +62,21 @@ jobs:
           reporter: github-pr-review
           fail_level: error
           golangci_lint_version: v1.53.3
-          workdir: .
-          # reviewdog will pick up all .go files in the repo
+          workdir: ./code
 
       - name: Upload golangci-lint summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: golangci-lint-summary
-          path: |
-            modules.txt
+          path: ./code
 
       - name: Summarize lint results
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            core.summary.addRaw("## Go Modules Checked\n")
-            const fs = require('fs');
-            const modules = fs.readFileSync('modules.txt', 'utf8');
-            core.summary.addRaw(modules);
+            core.summary.addRaw("## Go Static Analysis Run in ./code\n")
 
   lint_js:
     name: JavaScript Static Analysis
