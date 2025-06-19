@@ -69,63 +69,105 @@ jobs:
           script: |
             core.summary.addRaw("## Go Static Analysis Run in ./code\n")
 
+  # lint_js:
+  #   name: JavaScript Static Analysis
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     pull-requests: write
+  #   steps:
+  #     - uses: actions/checkout@v3
+
+  #     - name: Check for JS project files
+  #       id: check_js_files
+  #       run: |
+  #         if [ -f "js-code/package.json" ]; then
+  #           echo "js_package_exists=true" >> $GITHUB_OUTPUT
+  #           echo "Found js-code/package.json"
+  #           if [ -f "js-code/package-lock.json" ]; then
+  #             echo "js_lock_exists=true" >> $GITHUB_OUTPUT
+  #             echo "Found js-code/package-lock.json"
+  #           else
+  #             echo "js_lock_exists=false" >> $GITHUB_OUTPUT
+  #             echo "js-code/package-lock.json NOT found."
+  #           fi
+  #         else
+  #           echo "js_package_exists=false" >> $GITHUB_OUTPUT
+  #           echo "js_lock_exists=false" >> $GITHUB_OUTPUT
+  #           echo "js-code/package.json not found."
+  #         fi
+
+  #     - name: Set up Node.js with caching (if package-lock.json exists)
+  #       if: steps.check_js_files.outputs.js_lock_exists == 'true'
+  #       uses: actions/setup-node@v3
+  #       with:
+  #         node-version: '18'
+  #         cache: 'npm'
+  #         cache-dependency-path: js-code/package-lock.json
+
+  #     - name: Set up Node.js without caching (if no package-lock.json)
+  #       if: steps.check_js_files.outputs.js_lock_exists == 'false'
+  #       uses: actions/setup-node@v3
+  #       with:
+  #         node-version: '18'
+
+  #     - name: Install JS dependencies with npm ci (if package-lock.json exists)
+  #       if: steps.check_js_files.outputs.js_lock_exists == 'true'
+  #       run: npm ci
+  #       working-directory: ./js-code
+
+  #     - name: Install JS dependencies with npm install (if package.json exists but no lock file)
+  #       if: steps.check_js_files.outputs.js_package_exists == 'true' && steps.check_js_files.outputs.js_lock_exists == 'false'
+  #       run: npm install
+  #       working-directory: ./js-code
+
+  #     - name: Run ESLint and report issues (JS)
+  #       uses: reviewdog/action-eslint@v1
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         reporter: github-pr-review
+  #         eslint_flags: '**/*.js **/*.jsx --no-error-on-unmatched-pattern'
+  #         fail_level: error
+  #         workdir: ./js-code
+
   lint_js:
-    name: JavaScript Static Analysis
+    name: JavaScript/TypeScript Static Analysis
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Check for JS project files
-        id: check_js_files
+      - name: Find all JS/TS projects
+        id: find_projects
         run: |
-          if [ -f "js-code/package.json" ]; then
-            echo "js_package_exists=true" >> $GITHUB_OUTPUT
-            echo "Found js-code/package.json"
-            if [ -f "js-code/package-lock.json" ]; then
-              echo "js_lock_exists=true" >> $GITHUB_OUTPUT
-              echo "Found js-code/package-lock.json"
+          find . -name package.json -not -path "*/node_modules/*" > projects.txt
+          cat projects.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Lint all JS/TS projects
+        run: |
+          while read pkg; do
+            dir=$(dirname "$pkg")
+            echo "==> Installing and linting in $dir"
+            if [ -f "$dir/package-lock.json" ]; then
+              npm ci --prefix "$dir"
             else
-              echo "js_lock_exists=false" >> $GITHUB_OUTPUT
-              echo "js-code/package-lock.json NOT found."
+              npm install --prefix "$dir"
             fi
-          else
-            echo "js_package_exists=false" >> $GITHUB_OUTPUT
-            echo "js_lock_exists=false" >> $GITHUB_OUTPUT
-            echo "js-code/package.json not found."
-          fi
+            npx --prefix "$dir" eslint "**/*.{js,jsx,ts,tsx}" --no-error-on-unmatched-pattern || exit 1
+          done < projects.txt
+        shell: bash
 
-      - name: Set up Node.js with caching (if package-lock.json exists)
-        if: steps.check_js_files.outputs.js_lock_exists == 'true'
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: js-code/package-lock.json
-
-      - name: Set up Node.js without caching (if no package-lock.json)
-        if: steps.check_js_files.outputs.js_lock_exists == 'false'
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Install JS dependencies with npm ci (if package-lock.json exists)
-        if: steps.check_js_files.outputs.js_lock_exists == 'true'
-        run: npm ci
-        working-directory: ./js-code
-
-      - name: Install JS dependencies with npm install (if package.json exists but no lock file)
-        if: steps.check_js_files.outputs.js_package_exists == 'true' && steps.check_js_files.outputs.js_lock_exists == 'false'
-        run: npm install
-        working-directory: ./js-code
-
-      - name: Run ESLint and report issues (JS)
+      - name: Run ESLint via reviewdog (PR review)
         uses: reviewdog/action-eslint@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          eslint_flags: '**/*.js **/*.jsx --no-error-on-unmatched-pattern'
+          eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           fail_level: error
-          workdir: ./js-code
