@@ -157,4 +157,4 @@ jobs:
           reporter: github-pr-review
           eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           fail_level: error
-          workdir: ${{ github.workspace }}
+          workdir: ./js-code
