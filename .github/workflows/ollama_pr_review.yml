@@ -35,7 +35,7 @@ jobs:
         run: |
           echo "--- Installing Ollama ---"
           # Download and execute the Ollama installation script for amd64 architecture.
-          curl -fsSL https://ollama.com/install.sh | sh
+          curl -fsSL [https://ollama.com/install.sh](https://ollama.com/install.sh) | sh
           echo "Ollama installation complete."
 
       - name: Start Ollama Service, Pull Model, and Prepare for Review
@@ -130,7 +130,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const reviewOutput = `${{ steps.review_with_ollama.outputs.review_result }}`;
+            const reviewOutput = process.env.REVIEW_RESULT; // Access the review result from environment variable
             if (reviewOutput && reviewOutput.trim() !== "") {
               github.rest.issues.createComment({
                 issue_number: context.issue.number,
@@ -141,6 +141,9 @@ jobs:
             } else {
               console.log('No review content generated. Skipping PR comment.');
             }
+        env:
+          # Pass the review_result as an environment variable to the github-script step
+          REVIEW_RESULT: "${{ steps.review_with_ollama.outputs.review_result }}"
         if: always() && github.event_name == 'pull_request' && steps.review_with_ollama.outputs.review_result != ''
 
       - name: Stop Ollama Service (Cleanup)
