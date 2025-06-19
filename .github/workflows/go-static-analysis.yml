@@ -40,19 +40,13 @@ jobs:
           go mod tidy
         working-directory: ./code
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-
       - name: Run golangci-lint via reviewdog (PR review)
         uses: reviewdog/action-golangci-lint@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
           fail_level: error
-          golangci_lint_version: v1.53.3
+          golangci_lint_version: v1.57.2
           workdir: ./code
 
       - name: Upload golangci-lint summary
