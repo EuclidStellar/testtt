@@ -74,15 +74,10 @@ jobs:
           echo "Note: Initial model load time will occur during the first inference (PR review)."
           echo "-------------------------------------------------------------------"
 
-      - name: Get Git Diff for Pull Request
-        id: get_diff
-        # Only run this step if the workflow was triggered by a pull_request event
-        if: github.event_name == 'pull_request'
+      - name: Get PR diff
         run: |
-          echo "--- Generating Git Diff ---"
-          DIFF_CONTENT=$(git diff "origin/${{ github.base_ref }}" "origin/${{ github.head_ref }}")
-          echo "$DIFF_CONTENT" > pr_diff.txt
-          echo "Git diff generated and saved to pr_diff.txt."
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD > pr.diff
 
       - name: Review PR with Ollama and Custom Prompt
         id: review_with_ollama
@@ -106,7 +101,8 @@ jobs:
             $PR_DIFF
             \`\`\`
 
-            Provide your review in a concise and actionable manner, using markdown formatting including code blocks where necessary. Start with a brief summary, then list specific findings and suggestions."
+            Provide your review in a concise and actionable manner, using markdown formatting including code blocks where necessary. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
+            End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
             REVIEW_RESULT=$(echo "$CUSTOM_PROMPT" | ollama run qwen3:14b)
