@@ -77,7 +77,7 @@ jobs:
       - name: Get PR diff
         run: |
           git fetch origin ${{ github.base_ref }}
-          git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
 
       - name: Review PR with Ollama and Custom Prompt
         id: review_with_ollama
