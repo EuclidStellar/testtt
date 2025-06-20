@@ -155,3 +155,8 @@ jobs:
           else
             echo "Ollama service not running or already stopped."
           fi
+
+      - name: Show diff file
+        run: |
+          cat pr_diff.txt || echo "No diff file found"
+          echo "Diff file size: $(wc -c < pr_diff.txt)"
