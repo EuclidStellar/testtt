@@ -26,28 +26,60 @@ jobs:
           # - service2
 
     steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
+      - uses: actions/checkout@v4
+
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
-          
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ./${{ matrix.working-directory }}/go.sum
+          key: ${{ runner.os }}-go-${{ hashFiles('./${{ matrix.working-directory }}/go.sum') }}
+
+      - name: Ensure Go module exists and tidy
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init github.com/${{ github.repository }}
+          fi
+          go mod tidy
+        working-directory: ./${{ matrix.working-directory }}
+
+      - name: Install reviewdog
+        run: |
+          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Install golangci-lint
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
-        working-directory: ${{ matrix.working-directory }}
-          
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+        working-directory: ./${{ matrix.working-directory }}
+
       - name: Run lint and report issues
         uses: reviewdog/action-golangci-lint@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
           fail-on-error: false
-          working-directory: ${{ matrix.working-directory }}
+          workdir: ./${{ matrix.working-directory }}
+
+      - name: Upload golangci-lint summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golangci-lint-summary-${{ matrix.working-directory }}
+          path: ./${{ matrix.working-directory }}
+
+      - name: Summarize lint results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.summary.addRaw("## Go Static Analysis Run in ${{ matrix.working-directory }}\n")
 
   lint_js:
     name: JavaScript Static Analysis
