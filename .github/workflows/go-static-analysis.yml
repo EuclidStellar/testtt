@@ -110,6 +110,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          
+      - name: Ensure Package.json exist 
+        run: |
+          if [ ! -f package.json ]; then
+            npm init -y
+            npm install eslint --save-dev
+            npx eslint --init
+            echo "ESLint initialized in ${{ matrix.working-directory }}"
+          else
+            echo "package.json already exists in ${{ matrix.working-directory }}"
+          fi
+        working-directory: ./${{ matrix.working-directory }}
 
       - name: Run ESLint via reviewdog (PR review)
         uses: reviewdog/action-eslint@v1
