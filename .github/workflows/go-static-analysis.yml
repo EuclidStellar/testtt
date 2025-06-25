@@ -111,17 +111,17 @@ jobs:
         with:
           node-version: '18'
           
-      - name: Ensure package.json and eslint.config.js exist
+      - name: Ensure package.json and eslint.config.mjs exist
         run: |
           if [ ! -f package.json ]; then
             npm init -y
             npm install eslint --save-dev
           fi
-          if [ ! -f eslint.config.js ]; then
-            echo "export default [{ rules: { semi: 'error', quotes: ['error', 'single'] } }];" > eslint.config.js
-            echo "Created minimal eslint.config.js in ${{ matrix.working-directory }}"
+          if [ ! -f eslint.config.mjs ]; then
+            echo "export default [{ rules: { semi: 'error', quotes: ['error', 'single'] } }];" > eslint.config.mjs
+            echo "Created minimal eslint.config.mjs in ${{ matrix.working-directory }}"
           else
-            echo "eslint.config.js already exists in ${{ matrix.working-directory }}"
+            echo "eslint.config.mjs already exists in ${{ matrix.working-directory }}"
           fi
         working-directory: ./${{ matrix.working-directory }}
 
@@ -130,6 +130,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
+          #eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
+          eslint_flags: '--config eslint.config.mjs **/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           fail_level: error
           workdir: ./${{ matrix.working-directory }}
