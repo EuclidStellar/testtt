@@ -69,7 +69,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
           workdir: ./${{ matrix.working-directory }}
-          golangci_lint_version: v1.57.2
           fail_level: warning
 
       - name: Upload golangci-lint summary
