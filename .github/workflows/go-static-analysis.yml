@@ -111,15 +111,17 @@ jobs:
         with:
           node-version: '18'
           
-      - name: Ensure Package.json exist 
+      - name: Ensure package.json and eslint.config.js exist
         run: |
           if [ ! -f package.json ]; then
             npm init -y
             npm install eslint --save-dev
-            npx eslint --init
-            echo "ESLint initialized in ${{ matrix.working-directory }}"
+          fi
+          if [ ! -f eslint.config.js ]; then
+            echo "export default [{ rules: { semi: 'error', quotes: ['error', 'single'] } }];" > eslint.config.js
+            echo "Created minimal eslint.config.js in ${{ matrix.working-directory }}"
           else
-            echo "package.json already exists in ${{ matrix.working-directory }}"
+            echo "eslint.config.js already exists in ${{ matrix.working-directory }}"
           fi
         working-directory: ./${{ matrix.working-directory }}
 
