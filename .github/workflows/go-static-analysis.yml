@@ -70,8 +70,7 @@ jobs:
           reporter: github-pr-review
           workdir: ./${{ matrix.working-directory }}
           fail_level: warning
-          golangci_lint_version: v1.64.8 # pin golangci-lint version
-
+          
       - name: Upload golangci-lint summary
         if: always()
         uses: actions/upload-artifact@v4
