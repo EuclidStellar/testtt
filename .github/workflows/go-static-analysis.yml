@@ -62,9 +62,9 @@ jobs:
       - name: Run lint and report issues
         uses: reviewdog/action-golangci-lint@v2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          fail-on-error: false
+          fail_on_error: false
           workdir: ./${{ matrix.working-directory }}
 
       - name: Upload golangci-lint summary
