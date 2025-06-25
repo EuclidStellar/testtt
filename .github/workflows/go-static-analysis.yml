@@ -93,7 +93,6 @@ jobs:
       matrix:
         working-directory:
           - js-code
-          - code 
           # Add more JS/TS project directories here, e.g.:
           # - frontend
           # - webapp
