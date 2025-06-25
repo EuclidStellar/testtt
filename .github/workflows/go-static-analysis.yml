@@ -16,6 +16,15 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        working-directory:
+          - code
+          # Add more Go project directories here, e.g.:
+          # - service1
+          # - service2
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,16 +38,17 @@ jobs:
         with:
           path: |
             ~/.cache/go-build
-            ./code/go.sum
-          key: ${{ runner.os }}-go-${{ hashFiles('./code/go.sum') }}
+            ./${{ matrix.working-directory }}/go.sum
+          key: ${{ runner.os }}-go-${{ hashFiles('./${{ matrix.working-directory }}/go.sum') }}
 
       - name: Ensure Go module exists and tidy
+      # we are checking go.mod for linting because golangci-lint requires it
         run: |
           if [ ! -f go.mod ]; then
             go mod init github.com/${{ github.repository }}
           fi
           go mod tidy
-        working-directory: ./code
+        working-directory: ./${{ matrix.working-directory }}
 
       - name: Install reviewdog
         run: |
@@ -48,29 +58,28 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.2
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-        working-directory: ./code
+        working-directory: ./${{ matrix.working-directory }}
 
       - name: Run golangci-lint and report via reviewdog
         run: |
           golangci-lint run --out-format=checkstyle ./... | reviewdog -f=checkstyle -name="golangci-lint" -reporter=github-pr-review -fail-on-error=true
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: ./code
+        working-directory: ./${{ matrix.working-directory }}
 
       - name: Upload golangci-lint summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: golangci-lint-summary
-          path: ./code
+          name: golangci-lint-summary-${{ matrix.working-directory }}
+          path: ./${{ matrix.working-directory }}
 
       - name: Summarize lint results
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            core.summary.addRaw("## Go Static Analysis Run in ./code\n")
-
+            core.summary.addRaw("## Go Static Analysis Run in ${{ matrix.working-directory }}\n")
 
   lint_js:
     name: JavaScript Static Analysis
