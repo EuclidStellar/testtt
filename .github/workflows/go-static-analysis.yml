@@ -70,6 +70,7 @@ jobs:
           reporter: github-pr-review
           workdir: ./${{ matrix.working-directory }}
           fail_level: warning
+          golangci_lint_flags: '--out-format=checkstyle --timeout=5m'
 
       - name: Upload golangci-lint summary
         if: always()
