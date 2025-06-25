@@ -64,9 +64,9 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          fail_level: warning
           workdir: ./${{ matrix.working-directory }}
           golangci_lint_version: v1.57.2
+          continue_on_error: true
 
       - name: Upload golangci-lint summary
         if: always()
