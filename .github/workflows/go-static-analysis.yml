@@ -16,12 +16,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    strategy:
-      fail-fast: false
-      matrix:
-        working-directory:
-          - code
-          # Add more Go project directories here if needed
     steps:
       - uses: actions/checkout@v4
 
@@ -30,34 +24,53 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+      - name: Cache Go modules
+        uses: actions/cache@v4
         with:
-          version: v1.57.2
-          working-directory: ${{ matrix.working-directory }}
-          install-mode: "goinstall"
+          path: |
+            ~/.cache/go-build
+            ./code/go.sum
+          key: ${{ runner.os }}-go-${{ hashFiles('./code/go.sum') }}
 
-      # Optional: If you want reviewdog PR comments, add this step
+      - name: Ensure Go module exists and tidy
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init github.com/${{ github.repository }}
+          fi
+          go mod tidy
+        working-directory: ./code
+
+      - name: Install reviewdog
+        run: |
+          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+        working-directory: ./code
+
       - name: Run golangci-lint and report via reviewdog
         run: |
           golangci-lint run --out-format=checkstyle ./... | reviewdog -f=checkstyle -name="golangci-lint" -reporter=github-pr-review -fail-on-error=true
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        working-directory: ${{ matrix.working-directory }}
+        working-directory: ./code
 
       - name: Upload golangci-lint summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: golangci-lint-summary
-          path: ${{ matrix.working-directory }}
+          path: ./code
 
       - name: Summarize lint results
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            core.summary.addRaw("## Go Static Analysis Run in ${{ matrix.working-directory }}\n")
+            core.summary.addRaw("## Go Static Analysis Run in ./code\n")
+
 
   lint_js:
     name: JavaScript Static Analysis
@@ -79,17 +92,11 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Run ESLint via reviewdog (PR review) for all projects
-        run: |
-          while read project; do
-            dir=$(dirname "$project")
-            if [ -f "$dir/package.json" ]; then
-              echo "Running ESLint in $dir"
-              cd "$dir"
-              npm ci || npm install
-              npx eslint '**/*.{js,jsx,ts,tsx}' --no-error-on-unmatched-pattern | npx reviewdog -f=eslint -name="eslint" -reporter=github-pr-review -fail-on-error=true
-              cd -
-            fi
-          done < projects.txt
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run ESLint via reviewdog (PR review)
+        uses: reviewdog/action-eslint@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
+          fail_level: error
+          workdir: ./js-code
