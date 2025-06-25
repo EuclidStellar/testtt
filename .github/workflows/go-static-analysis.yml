@@ -88,6 +88,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        working-directory:
+          - js-code
+          - code 
+          # Add more JS/TS project directories here, e.g.:
+          # - frontend
+          # - webapp
     steps:
       - uses: actions/checkout@v4
 
@@ -109,4 +118,4 @@ jobs:
           reporter: github-pr-review
           eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           fail_level: error
-          workdir: ./js-code
+          workdir: ./${{ matrix.working-directory }}
