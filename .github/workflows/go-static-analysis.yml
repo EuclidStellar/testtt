@@ -3,11 +3,17 @@ name: Static Analysis
 on:
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened , edited]
     paths:
       - '**.go'
       - '**.js'
       - '**.jsx'
       - '.github/workflows/go-static-analysis.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
+  cancel-in-progress: true
+
 
 jobs:
   lint_and_fix_go:
@@ -21,29 +27,29 @@ jobs:
       matrix:
         working-directory:
           - code
-          # Add more Go project directories here, e.g.:
-          # - service1
-          # - service2
+          - echo-mysql
+          - echo-sql
+          - fasthttp-postgres
+          - gin-mongo
+          - gin-redis
+          - go-grpc
+          - go-jwt
+          - go-twilio
+          - graphql-sql
+          - http-pokeapi
+          - mux-elasticsearch
+          - mux-mysql
+          - mux-sql
+          - S3-Keploy
+          - sse-svelte
+          - users-profile
+          - book-store-inventory
 
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-
-
-      # - name: Set up Go
-      #   uses: actions/setup-go@v5
-      #   with:
-      #     go-version: '1.21.9'
-
-      # - name: Cache Go modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ~/.cache/go-build
-      #       ./${{ matrix.working-directory }}/go.sum
-      #     key: ${{ runner.os }}-go-${{ hashFiles('./${{ matrix.working-directory }}/go.sum') }}
 
       - name: Ensure Go module exists and tidy
         run: |
@@ -52,16 +58,6 @@ jobs:
           fi
           go mod tidy
         working-directory: ./${{ matrix.working-directory }}
-
-      # - name: Install reviewdog
-      #   run: |
-      #     curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
-
-      # - name: Install golangci-lint
-      #   run: |
-      #     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.2
-      #     echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-      #   working-directory: ./${{ matrix.working-directory }}
 
       - name: Run lint and report issues
         uses: reviewdog/action-golangci-lint@v2
@@ -101,12 +97,6 @@ jobs:
           # - webapp
     steps:
       - uses: actions/checkout@v4
-
-      - name: Find all JS/TS projects
-        id: find_projects
-        run: |
-          find . -name package.json -not -path "*/node_modules/*" > projects.txt
-          cat projects.txt
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
