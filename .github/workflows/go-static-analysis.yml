@@ -3,7 +3,7 @@ name: Static Analysis
 on:
   pull_request:
     branches: [ main ]
-    types: [opened, synchronize, reopened , edited]
+    types: [opened, synchronize, reopened, edited]
     paths:
       - '**.go'
       - '**.js'
@@ -14,10 +14,47 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: true
 
-
 jobs:
+  # Job 1: Determine which directories have changed
+  filter:
+    name: Determine Changed Directories
+    runs-on: ubuntu-latest
+    outputs:
+      go_matrix: ${{ steps.matrix_builder.outputs.go_matrix }}
+      js_matrix: ${{ steps.matrix_builder.outputs.js_matrix }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Use paths-filter action
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          list-files: 'json'
+          filters: |
+            go:
+              - 'code/**'
+              - 'mysql/**'
+              - 'gin-redis/**'
+              - 'mux/**'
+            js:
+              - 'js-code/**'
+
+      - name: Build Matrix from changed files
+        id: matrix_builder
+        if: steps.changes.outputs.go == 'true' || steps.changes.outputs.js == 'true'
+        run: |
+          go_dirs=$(echo '${{ steps.changes.outputs.go_files }}' | jq -r '[.[] | split("/")[0]] | unique | tojson')
+          echo "go_matrix=$go_dirs" >> $GITHUB_OUTPUT
+
+          js_dirs=$(echo '${{ steps.changes.outputs.js_files }}' | jq -r '[.[] | split("/")[0]] | unique | tojson')
+          echo "js_matrix=$js_dirs" >> $GITHUB_OUTPUT
+
+  # Job 2: Run Go linting only on changed directories
   lint_and_fix_go:
     name: Go Static Analysis
+    needs: filter # This job depends on the filter job
+    if: ${{ needs.filter.outputs.go_matrix != '[]' }} # Only run if the Go matrix is not empty
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,29 +62,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        working-directory:
-          - code
-          - echo-mysql
-          - echo-sql
-          - fasthttp-postgres
-          - gin-mongo
-          - gin-redis
-          - go-grpc
-          - go-jwt
-          - go-twilio
-          - graphql-sql
-          - http-pokeapi
-          - mux-elasticsearch
-          - mux-mysql
-          - mux-sql
-          - S3-Keploy
-          - sse-svelte
-          - users-profile
-          - book-store-inventory
+        # The matrix is now built dynamically from the filter job's output
+        working-directory: ${{ fromJSON(needs.filter.outputs.go_matrix) }}
 
     steps:
       - name: Check out code into the Go module directory
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -66,23 +86,12 @@ jobs:
           reporter: github-pr-review
           workdir: ./${{ matrix.working-directory }}
           fail_level: warning
-          
-      - name: Upload golangci-lint summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: golangci-lint-summary-${{ matrix.working-directory }}
-          path: ./${{ matrix.working-directory }}
 
-      - name: Summarize lint results
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.summary.addRaw("## Go Static Analysis Run in ${{ matrix.working-directory }}\n")
-
+  # Job 3: Run JS linting only on changed directories
   lint_js:
     name: JavaScript Static Analysis
+    needs: filter # This job also depends on the filter job
+    if: ${{ needs.filter.outputs.js_matrix != '[]' }} # Only run if the JS matrix is not empty
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,11 +99,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        working-directory:
-          - js-code
-          # Add more JS/TS project directories here, e.g.:
-          # - frontend
-          # - webapp
+        # The matrix is now built dynamically from the filter job's output
+        working-directory: ${{ fromJSON(needs.filter.outputs.js_matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -102,7 +108,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          
+
       - name: Ensure package.json and eslint.config.mjs exist
         run: |
           if [ ! -f package.json ]; then
@@ -111,9 +117,6 @@ jobs:
           fi
           if [ ! -f eslint.config.mjs ]; then
             echo "export default [{ rules: { semi: 'error', quotes: ['error', 'single'] } }];" > eslint.config.mjs
-            echo "Created minimal eslint.config.mjs in ${{ matrix.working-directory }}"
-          else
-            echo "eslint.config.mjs already exists in ${{ matrix.working-directory }}"
           fi
         working-directory: ./${{ matrix.working-directory }}
 
@@ -122,7 +125,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          #eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           eslint_flags: '--config eslint.config.mjs **/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
           fail_level: error
           workdir: ./${{ matrix.working-directory }}
