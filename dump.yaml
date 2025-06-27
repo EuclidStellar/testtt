@@ -3,34 +3,73 @@
 # on:
 #   pull_request:
 #     branches: [ main ]
+#     types: [opened, synchronize, reopened, edited]
 #     paths:
 #       - '**.go'
 #       - '**.js'
 #       - '**.jsx'
 #       - '.github/workflows/go-static-analysis.yml'
 
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
+#   cancel-in-progress: true
+
 # jobs:
+#   # Job 1: Determine which directories have changed
+#   filter:
+#     name: Determine Changed Directories
+#     runs-on: ubuntu-latest
+#     outputs:
+#       go_matrix: ${{ steps.matrix_builder.outputs.go_matrix }}
+#       js_matrix: ${{ steps.matrix_builder.outputs.js_matrix }}
+#     steps:
+#       - name: Check out code
+#         uses: actions/checkout@v4
+
+#       - name: Use paths-filter action
+#         uses: dorny/paths-filter@v3
+#         id: changes
+#         with:
+#           list-files: 'json'
+#           filters: |
+#             go:
+#               - 'code/**'
+#               - 'mysql/**'
+#               - 'gin-redis/**'
+#               - 'mux/**'
+#             js:
+#               - 'js-code/**'
+
+#       - name: Build Matrix from changed files
+#         id: matrix_builder
+#         if: steps.changes.outputs.go == 'true' || steps.changes.outputs.js == 'true'
+#         run: |
+#           go_dirs=$(echo '${{ steps.changes.outputs.go_files }}' | jq -r '[.[] | split("/")[0]] | unique | tojson')
+#           echo "go_matrix=$go_dirs" >> $GITHUB_OUTPUT
+
+#           js_dirs=$(echo '${{ steps.changes.outputs.js_files }}' | jq -r '[.[] | split("/")[0]] | unique | tojson')
+#           echo "js_matrix=$js_dirs" >> $GITHUB_OUTPUT
+
+#   # Job 2: Run Go linting only on changed directories
 #   lint_and_fix_go:
 #     name: Go Static Analysis
+#     needs: filter # This job depends on the filter job
+#     if: ${{ needs.filter.outputs.go_matrix != '[]' }} # Only run if the Go matrix is not empty
 #     runs-on: ubuntu-latest
 #     permissions:
 #       contents: write
 #       pull-requests: write
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         # The matrix is now built dynamically from the filter job's output
+#         working-directory: ${{ fromJSON(needs.filter.outputs.go_matrix) }}
+
 #     steps:
-#       - uses: actions/checkout@v4
-
-#       - name: Set up Go
-#         uses: actions/setup-go@v5
+#       - name: Check out code into the Go module directory
+#         uses: actions/checkout@v4
 #         with:
-#           go-version: '1.21'
-
-#       - name: Cache Go modules
-#         uses: actions/cache@v4
-#         with:
-#           path: |
-#             ~/.cache/go-build
-#             ./code/go.sum
-#           key: ${{ runner.os }}-go-${{ hashFiles('./code/go.sum') }}
+#           fetch-depth: 0
 
 #       - name: Ensure Go module exists and tidy
 #         run: |
@@ -38,65 +77,55 @@
 #             go mod init github.com/${{ github.repository }}
 #           fi
 #           go mod tidy
-#         working-directory: ./code
+#         working-directory: ./${{ matrix.working-directory }}
 
-#       - name: Install reviewdog
-#         run: |
-#           curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
-
-#       - name: Install golangci-lint
-#         run: |
-#           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.2
-#           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-#         working-directory: ./code
-
-#       - name: Run golangci-lint and report via reviewdog
-#         run: |
-#           golangci-lint run --out-format=checkstyle ./... | reviewdog -f=checkstyle -name="golangci-lint" -reporter=github-pr-review -fail-on-error=true
-#         env:
-#           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#         working-directory: ./code
-
-#       - name: Upload golangci-lint summary
-#         if: always()
-#         uses: actions/upload-artifact@v4
+#       - name: Run lint and report issues
+#         uses: reviewdog/action-golangci-lint@v2
 #         with:
-#           name: golangci-lint-summary
-#           path: ./code
+#           github_token: ${{ secrets.GITHUB_TOKEN }}
+#           reporter: github-pr-review
+#           workdir: ./${{ matrix.working-directory }}
+#           fail_level: warning
 
-#       - name: Summarize lint results
-#         if: always()
-#         uses: actions/github-script@v7
-#         with:
-#           script: |
-#             core.summary.addRaw("## Go Static Analysis Run in ./code\n")
-
-
+#   # Job 3: Run JS linting only on changed directories
 #   lint_js:
 #     name: JavaScript Static Analysis
+#     needs: filter # This job also depends on the filter job
+#     if: ${{ needs.filter.outputs.js_matrix != '[]' }} # Only run if the JS matrix is not empty
 #     runs-on: ubuntu-latest
 #     permissions:
 #       contents: read
 #       pull-requests: write
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         # The matrix is now built dynamically from the filter job's output
+#         working-directory: ${{ fromJSON(needs.filter.outputs.js_matrix) }}
 #     steps:
 #       - uses: actions/checkout@v4
-
-#       - name: Find all JS/TS projects
-#         id: find_projects
-#         run: |
-#           find . -name package.json -not -path "*/node_modules/*" > projects.txt
-#           cat projects.txt
 
 #       - name: Set up Node.js
 #         uses: actions/setup-node@v4
 #         with:
 #           node-version: '18'
 
+#       - name: Ensure package.json and eslint.config.mjs exist
+#         run: |
+#           if [ ! -f package.json ]; then
+#             npm init -y
+#             npm install eslint --save-dev
+#           fi
+#           if [ ! -f eslint.config.mjs ]; then
+#             echo "export default [{ rules: { semi: 'error', quotes: ['error', 'single'] } }];" > eslint.config.mjs
+#           fi
+#         working-directory: ./${{ matrix.working-directory }}
+
 #       - name: Run ESLint via reviewdog (PR review)
 #         uses: reviewdog/action-eslint@v1
 #         with:
 #           github_token: ${{ secrets.GITHUB_TOKEN }}
 #           reporter: github-pr-review
-#           eslint_flags: '**/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
+#           eslint_flags: '--config eslint.config.mjs **/*.{js,jsx,ts,tsx} --no-error-on-unmatched-pattern'
 #           fail_level: error
-#           workdir: ./js-code
+#           workdir: ./${{ matrix.working-directory }}
+
