@@ -79,11 +79,12 @@ jobs:
             \`\`\``;
 
             try {
-              // Call GitHub Models API (CORRECTED endpoint and auth)
+              // Call GitHub Models API
               const response = await fetch('https://models.github.ai/inference/chat/completions', {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${{ secrets.GITHUB_TOKEN }}`,
+                  // Use the new PAT secret instead of the default token
+                  'Authorization': `Bearer ${{ secrets.GH_PAT_MODELS }}`,
                   'Content-Type': 'application/json',
                   'User-Agent': 'GitHub-Actions-PR-Review/1.0'
                 },
