@@ -92,7 +92,7 @@ jobs:
             $PR_DIFF
             \`\`\`
 
-            Provide your review in a concise and actionable manner, using markdown formatting including code blocks where necessary. Start with a brief summary, then list specific findings and suggestions may use tables format to present review better.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
+            Provide your review in a concise and actionable manner, using markdown formatting including code blocks where necessary. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
             End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
