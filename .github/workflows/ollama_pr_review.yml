@@ -108,7 +108,7 @@ jobs:
             "
 
             echo "--- Sending diff to Ollama for review ---"
-            echo "$CUSTOM_PROMPT" | ollama run sam860/qwen3:8b-Q5_K_XL > ollama_raw_review.txt
+            echo "$CUSTOM_PROMPT" | ollama run sam860/qwen3:8b-Q5_K_XL --no-spinner > ollama_raw_review.txt
 
             echo "--- Ollama PR Review Result ---"
             echo "::group::Ollama Review Output"
