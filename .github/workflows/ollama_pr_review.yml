@@ -63,70 +63,53 @@ jobs:
               return;
             }
 
-            const prompt = `You are an expert code reviewer. Analyze this git diff and provide a comprehensive review.
-
-            IMPORTANT FORMATTING REQUIREMENTS:
-            1. Use proper markdown formatting with clear sections
-            2. Include code snippets for examples (use triple backticks with language)
-            3. Use tables for structured data when appropriate
-            4. Use clear headings and subheadings
-            5. Provide specific line references when possible
-            6. Include both problems and solutions
-            7. Use > blockquotes for important notes
-            8. NO emojis - keep it professional
-
-            Structure your review as follows:
-
-            ## Code Review Summary
-            [Brief overview of changes and overall assessment]
-
-            ## Critical Issues
-            [High priority issues that must be addressed]
-
-            ## Code Quality Analysis
-            
-            ### Security Concerns
-            [Security issues with code examples]
-
-            ### Performance Issues  
-            [Performance problems with suggestions]
-
-            ### Best Practices
-            [Coding standard violations and improvements]
-
-            ## Detailed Findings
-
-            | Category | Issue | Location | Severity | Recommendation |
-            |----------|-------|----------|----------|----------------|
-            | [Category] | [Description] | [File:Line] | [High/Medium/Low] | [Solution] |
-
-            ## Code Examples
-
-            ### Current Implementation
-            [Show problematic code with explanations]
-
-            ### Suggested Improvements
-            [Show improved code with explanations]
-
-            ## Testing Recommendations
-            [Specific tests that should be added]
-
-            ## Documentation Notes
-            [Documentation improvements needed]
-
-            ---
-            
-            Here's the diff to review:
-            \`\`\`diff
-            ${prDiff}
-            \`\`\``;
+            const prompt = "You are an expert code reviewer. Analyze this git diff and provide a comprehensive review.\n\n" +
+              "IMPORTANT FORMATTING REQUIREMENTS:\n" +
+              "1. Use proper markdown formatting with clear sections\n" +
+              "2. Include code snippets for examples (use triple backticks with language)\n" +
+              "3. Use tables for structured data when appropriate\n" +
+              "4. Use clear headings and subheadings\n" +
+              "5. Provide specific line references when possible\n" +
+              "6. Include both problems and solutions\n" +
+              "7. Use > blockquotes for important notes\n" +
+              "8. NO emojis - keep it professional\n\n" +
+              "Structure your review as follows:\n\n" +
+              "## Code Review Summary\n" +
+              "[Brief overview of changes and overall assessment]\n\n" +
+              "## Critical Issues\n" +
+              "[High priority issues that must be addressed]\n\n" +
+              "## Code Quality Analysis\n\n" +
+              "### Security Concerns\n" +
+              "[Security issues with code examples]\n\n" +
+              "### Performance Issues\n" +
+              "[Performance problems with suggestions]\n\n" +
+              "### Best Practices\n" +
+              "[Coding standard violations and improvements]\n\n" +
+              "## Detailed Findings\n\n" +
+              "| Category | Issue | Location | Severity | Recommendation |\n" +
+              "|----------|-------|----------|----------|-----------------|\n" +
+              "| [Category] | [Description] | [File:Line] | [High/Medium/Low] | [Solution] |\n\n" +
+              "## Code Examples\n\n" +
+              "### Current Implementation\n" +
+              "[Show problematic code with explanations]\n\n" +
+              "### Suggested Improvements\n" +
+              "[Show improved code with explanations]\n\n" +
+              "## Testing Recommendations\n" +
+              "[Specific tests that should be added]\n\n" +
+              "## Documentation Notes\n" +
+              "[Documentation improvements needed]\n\n" +
+              "---\n\n" +
+              "Here's the diff to review:\n" +
+              "```diff\n" +
+              prDiff +
+              "\n```";
 
             try {
               // Call GitHub Models API
               const response = await fetch('https://models.github.ai/inference/chat/completions', {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${{ secrets.GITHUB_TOKEN }}`,
+                  'Authorization': 'Bearer ${{ secrets.GITHUB_TOKEN }}',
                   'Content-Type': 'application/json',
                   'User-Agent': 'GitHub-Actions-PR-Review/1.0'
                 },
@@ -149,51 +132,49 @@ jobs:
 
               if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`GitHub Models API error: ${response.status} ${response.statusText} - ${errorText}`);
+                throw new Error('GitHub Models API error: ' + response.status + ' ' + response.statusText + ' - ' + errorText);
               }
 
               const data = await response.json();
               const reviewContent = data.choices[0].message.content;
 
               // Create PR comment with improved formatting
-              const reviewComment = `## AI Code Review Report
-                          
-            ${reviewContent}
+              const reviewComment = "## AI Code Review Report\n\n" +
+                reviewContent + "\n\n" +
+                "---\n" +
+                "**Review Details:**\n" +
+                "- **Model:** GitHub Models GPT-4o-mini\n" +
+                "- **Generated:** " + new Date().toLocaleString() + "\n" +
+                "- **Diff Size:** " + prDiff.length + " characters\n\n" +
+                "> This review is generated by AI and should be used as a starting point for human review. Always verify suggestions before implementing changes.";
 
-            ---
-            This review was generated by GitHub Models AI.
-            
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: reviewComment
+              });
 
-                          await github.rest.issues.createComment({
-                            issue_number: context.issue.number,
-                            owner: context.repo.owner,
-                            repo: context.repo.repo,
-                            body: reviewComment
-                          });
-
-                          console.log('✅ PR review comment posted successfully');
-                          
-                        } catch (error) {
-                          console.error('Error calling GitHub Models API:', error);
-                          
-                          // Post error comment to PR
-                          await github.rest.issues.createComment({
-                            issue_number: context.issue.number,
-                            owner: context.repo.owner,
-                            repo: context.repo.repo,
-                            body: `## AI Code Review - Error
-
-            An error occurred while generating the code review:
-
-            \`\`\`
-            ${error.message}
-            \`\`\`
-
-            Please check the workflow logs for more details.`
-                          });
-                          
-                          core.setFailed(`Failed to generate AI review: ${error.message}`);
-                        }
+              console.log('✅ PR review comment posted successfully');
+              
+            } catch (error) {
+              console.error('Error calling GitHub Models API:', error);
+              
+              // Post error comment to PR
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: "## AI Code Review - Error\n\n" +
+                      "An error occurred while generating the code review:\n\n" +
+                      "```\n" +
+                      error.message +
+                      "\n```\n\n" +
+                      "Please check the workflow logs for more details."
+              });
+              
+              core.setFailed('Failed to generate AI review: ' + error.message);
+            }
 
       - name: Show diff info
         if: always()
