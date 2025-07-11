@@ -44,9 +44,9 @@ jobs:
           done
           echo "Ollama service is ready at http://localhost:11434."
 
-          echo "--- Pulling wao/phi4-mini-instruct model ---"
+          echo "--- Pulling sam860/qwen3:8b-Q5_K_XL model ---"
           START_TIME=$(date +%s)
-          ollama pull wao/phi4-mini-instruct|| {
+          ollama pull sam860/qwen3:8b-Q5_K_XL || {
             echo "Failed to pull model. Exiting."
             exit 1
           }
@@ -112,7 +112,7 @@ jobs:
             End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
-            echo "$CUSTOM_PROMPT" | ollama run wao/phi4-mini-instruct > ollama_raw_review.txt
+            echo "$CUSTOM_PROMPT" | ollama run sam860/qwen3:8b-Q5_K_XL > ollama_raw_review.txt
 
             echo "--- Ollama PR Review Result ---"
             echo "::group::Ollama Review Output"
@@ -153,7 +153,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `## 🤖 Ollama Code Review (ollama run wao/phi4-mini-instruct)\n\n${reviewOutput}`
+                body: `## 🤖 Ollama Code Review (ollama run sam860/sam860/qwen3:8b-Q5_K_XL)\n\n${reviewOutput}`
               });
             } else {
               console.log('No review content generated. Skipping PR comment.');
