@@ -124,7 +124,7 @@ jobs:
                       content: prompt
                     }
                   ],
-                  model: "Phi-3.5-mini instruct",
+                  model: "Phi-3.5-mini-instruct",
                   temperature: 0.1,
                   max_tokens: 4000
                 })
