@@ -79,13 +79,26 @@ jobs:
           if [ -f "$DIFF_FILE_PATH" ] && [ -s "$DIFF_FILE_PATH" ]; then
             PR_DIFF=$(cat "$DIFF_FILE_PATH")
 
-            CUSTOM_PROMPT="You are an expert code reviewer. Your task is to analyze the provided git diff, identify potential issues, suggest improvements, and summarize the key changes. Pay close attention to:
-            - Readability and code style adherence.
-            - Potential bugs or edge cases.
-            - Security vulnerabilities.
-            - Performance implications.
-            - Adherence to best practices.
-            - Missing tests or documentation.
+            CUSTOM_PROMPT="You are an expert code reviewer. Review the following Git diff for quality, style, and correctness. 
+            Your task:
+
+              - Identify issues in code readability, style, and structure
+              - Catch bugs, edge cases, and security risks
+              - Flag performance bottlenecks or bad practices
+              - Suggest improvements (naming, logic, clarity, etc.)
+              - Highlight missing tests or documentation
+
+            Respond with:
+              1. Summary of key changes
+              2. Findings & Suggestions in a clear bullet or table format
+              3. Top Critical Issues at the end
+              4. Summary
+
+            Use formatting like:
+              - Code blocks(```) for code snippets and ensure they are properly closed 
+              - Tables for issues if needed
+
+
 
             Here is the git diff:
             \`\`\`diff
