@@ -44,9 +44,9 @@ jobs:
           done
           echo "Ollama service is ready at http://localhost:11434."
 
-          echo "--- Pulling sam860/qwen3:8b-Q5_K_XL model ---"
+          echo "--- Pulling sam860/qwen3:8b-Q3_K_XL model ---"
           START_TIME=$(date +%s)
-          ollama pull sam860/qwen3:8b-Q5_K_XL || {
+          ollama pull sam860/qwen3:8b-Q3_K_XL || {
             echo "Failed to pull model. Exiting."
             exit 1
           }
@@ -111,7 +111,7 @@ jobs:
               cat "$DIFF_FILE_PATH"
               echo
               echo "\`\`\`"
-            } | ollama run sam860/qwen3:8b-Q5_K_XL > ollama_raw_review.txt 2>/dev/null
+            } | ollama run sam860/qwen3:8b-Q3_K_XL > ollama_raw_review.txt 2>/dev/null
 
 
             echo "--- Ollama PR Review Result ---"
@@ -128,25 +128,15 @@ jobs:
       - name: Remove LLM thinking process from review
         if: github.event_name == 'pull_request'
         run: |
+          # This awk command now looks for the specific start/end tags to skip the thought process.
+          # This version is more robust and avoids shell interpretation issues.
           awk '
-            BEGIN { skip=0 } # begin is used to initialize the skip variable
-            # Skip lines between <think> and </think> or Thinking... and ...done thinking.
-            # This is to remove the LLM's thinking process from the output.
-            # Adjust regex patterns as needed based on actual output.
-           /^<think>$/ || /^Thinking\.\.\./ {
-              skip=1
-              next
-            }
-            # Stop skipping if we see either pattern
-            /^<\/think>$/ || /^\.\.\.done thinking\./ {
-              skip=0
-              next
-            }
-            # Print the line only if we are not skipping
-            skip==0 {
-              print
-            }
-          ' ollama_raw_review.txt > ollama_clean_review.txt
+            /^\s*<think>\s*$/ { skip=1; next }
+            /^\s*<\/think>\s*$/ { skip=0; next }
+            /^Thinking\.\.\./ { skip=1; next }
+            /^\.\.\.done thinking\./ { skip=0; next }
+            !skip { print }
+          ' ollama_raw_review.txt | sed '/./,$!d' > ollama_clean_review.txt
 
       - name: Set review output as environment variable
         id: set_review_output
@@ -166,7 +156,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `## 🤖 Ollama Code Review (ollama run sam860/sam860/qwen3:8b-Q5_K_XL)\n\n${reviewOutput}`
+                body: `## 🤖 Ollama Code Review (ollama run sam860/sam860/qwen3:8b-Q3_K_XL)\n\n${reviewOutput}`
               });
             } else {
               console.log('No review content generated. Skipping PR comment.');
