@@ -44,9 +44,9 @@ jobs:
           done
           echo "Ollama service is ready at http://localhost:11434."
 
-          echo "--- Pulling sam860/qwen3:4b-Q5_K_XL model ---"
+          echo "--- Pulling eramax/nxcode-cq-7b-orpo:q6 model ---"
           START_TIME=$(date +%s)
-          ollama pull sam860/qwen3:4b-Q5_K_XL || {
+          ollama pull eramax/nxcode-cq-7b-orpo:q6 || {
             echo "Failed to pull model. Exiting."
             exit 1
           }
@@ -111,7 +111,7 @@ jobs:
               cat "$DIFF_FILE_PATH"
               echo
               echo "\`\`\`"
-            } | ollama run sam860/qwen3:4b-Q5_K_XL > ollama_raw_review.txt 2>/dev/null
+            } | ollama run eramax/nxcode-cq-7b-orpo:q6 > ollama_raw_review.txt 2>/dev/null
 
 
             echo "--- Ollama PR Review Result ---"
@@ -156,7 +156,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `## 🤖 Ollama Code Review (ollama run sam860/qwen3:4b-Q5_K_XL)\n\n${reviewOutput}`
+                body: `## 🤖 Ollama Code Review (ollama run eramax/nxcode-cq-7b-orpo:q6)\n\n${reviewOutput}`
               });
             } else {
               console.log('No review content generated. Skipping PR comment.');
