@@ -44,9 +44,9 @@ jobs:
           done
           echo "Ollama service is ready at http://localhost:11434."
 
-          echo "--- Pulling qwen3:14b model ---"
+          echo "--- Pulling wao/phi4-mini-instruct model ---"
           START_TIME=$(date +%s)
-          ollama pull MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0 || {
+          ollama pull wao/phi4-mini-instruct|| {
             echo "Failed to pull model. Exiting."
             exit 1
           }
@@ -96,7 +96,7 @@ jobs:
             End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
-            echo "$CUSTOM_PROMPT" | ollama run MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0 > ollama_raw_review.txt
+            echo "$CUSTOM_PROMPT" | ollama run wao/phi4-mini-instruct > ollama_raw_review.txt
 
             echo "--- Ollama PR Review Result ---"
             echo "::group::Ollama Review Output"
@@ -137,7 +137,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `## 🤖 Ollama Code Review (ollama run MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0)\n\n${reviewOutput}`
+                body: `## 🤖 Ollama Code Review (ollama run wao/phi4-mini-instruct)\n\n${reviewOutput}`
               });
             } else {
               console.log('No review content generated. Skipping PR comment.');
