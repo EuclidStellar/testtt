@@ -95,18 +95,17 @@ jobs:
               4. Summary
 
             Use formatting like:
-              - Code blocks(```) for code snippets and ensure they are properly closed 
+              - Code blocks(\`\`\` code snippet \`\`\`) for code snippets and ensure they are properly closed
               - Tables for issues if needed
 
-
+            Only return review comments. No extra explanation or reasoning.
 
             Here is the git diff:
             \`\`\`diff
             $PR_DIFF
             \`\`\`
 
-            Provide your intuitive review in a concise and actionable manner, using presentable formatting including code blocks and tables. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
-            End with a summary of the most critical issues found."
+            "
 
             echo "--- Sending diff to Ollama for review ---"
             echo "$CUSTOM_PROMPT" | ollama run sam860/qwen3:8b-Q5_K_XL > ollama_raw_review.txt
