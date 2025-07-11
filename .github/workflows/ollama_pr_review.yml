@@ -79,6 +79,22 @@ jobs:
           if [ -f "$DIFF_FILE_PATH" ] && [ -s "$DIFF_FILE_PATH" ]; then
             PR_DIFF=$(cat "$DIFF_FILE_PATH")
 
+            # CUSTOM_PROMPT="You are an expert code reviewer. Your task is to analyze the provided git diff, identify potential issues, suggest improvements, and summarize the key changes. Pay close attention to:
+            # - Readability and code style adherence.
+            # - Potential bugs or edge cases.
+            # - Security vulnerabilities.
+            # - Performance implications.
+            # - Adherence to best practices.
+            # - Missing tests or documentation.
+
+            # Here is the git diff:
+            # \`\`\`diff
+            # $PR_DIFF
+            # \`\`\`
+
+            # Provide your intuitive review in a concise and actionable manner, using markdown formatting including code blocks and tables where necessary. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
+            # End with a summary of the most critical issues found."
+
             CUSTOM_PROMPT="You are an expert code reviewer. Your task is to analyze the provided git diff, identify potential issues, suggest improvements, and summarize the key changes. Pay close attention to:
             - Readability and code style adherence.
             - Potential bugs or edge cases.
@@ -92,7 +108,7 @@ jobs:
             $PR_DIFF
             \`\`\`
 
-            Provide your intuitive review in a concise and actionable manner, using markdown formatting including code blocks and tables where necessary. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
+            Provide your intuitive review in a concise and actionable manner, using markdown formatting including code blocks and tables. Start with a brief summary, then list specific findings and suggestions.  Output only the review comments for the code changes. Do not include your reasoning or thinking process.
             End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
