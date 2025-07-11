@@ -137,7 +137,9 @@ jobs:
 
               const data = await response.json();
               const reviewContent = data.choices[0].message.content;
-
+              // store review content in txt temp file 
+              fs.writeFileSync('review_content.txt', reviewContent, 'utf8');
+              
               // Create PR comment with improved formatting
               const reviewComment = "## AI Code Review Report\n\n" +
                 reviewContent + "\n\n" +
