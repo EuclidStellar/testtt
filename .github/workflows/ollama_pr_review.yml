@@ -46,7 +46,10 @@ jobs:
 
           echo "--- Pulling qwen3:14b model ---"
           START_TIME=$(date +%s)
-          ollama pull qwen3:14b
+          ollama pull MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0 || {
+            echo "Failed to pull model. Exiting."
+            exit 1
+          }
           END_TIME=$(date +%s)
           DOWNLOAD_DURATION=$((END_TIME - START_TIME))
           echo "::notice file=ollama_pull_duration.log::Model download time: ${DOWNLOAD_DURATION} seconds"
@@ -134,7 +137,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `## 🤖 Ollama Code Review (qwen3:14b)\n\n${reviewOutput}`
+                body: `## 🤖 Ollama Code Review (ollama run MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0)\n\n${reviewOutput}`
               });
             } else {
               console.log('No review content generated. Skipping PR comment.');
