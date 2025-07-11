@@ -129,10 +129,23 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           awk '
-            BEGIN {skip=0}
-            /^Thinking\.\.\./ {skip=1; next}
-            /^\.\.\.done thinking\./ {skip=0; next}
-            skip==0 {print}
+            BEGIN { skip=0 } # begin is used to initialize the skip variable
+            # Skip lines between <think> and </think> or Thinking... and ...done thinking.
+            # This is to remove the LLM's thinking process from the output.
+            # Adjust regex patterns as needed based on actual output.
+           /^<think>$/ || /^Thinking\.\.\./ {
+              skip=1
+              next
+            }
+            # Stop skipping if we see either pattern
+            /^<\/think>$/ || /^\.\.\.done thinking\./ {
+              skip=0
+              next
+            }
+            # Print the line only if we are not skipping
+            skip==0 {
+              print
+            }
           ' ollama_raw_review.txt > ollama_clean_review.txt
 
       - name: Set review output as environment variable
