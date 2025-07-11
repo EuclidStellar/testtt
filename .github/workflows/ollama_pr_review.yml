@@ -77,9 +77,8 @@ jobs:
         run: |
           DIFF_FILE_PATH="pr_diff.txt"
           if [ -f "$DIFF_FILE_PATH" ] && [ -s "$DIFF_FILE_PATH" ]; then
-            PR_DIFF=$(cat "$DIFF_FILE_PATH")
-
-            CUSTOM_PROMPT="You are an expert code reviewer. Review the following Git diff for quality, style, and correctness. 
+            # This part is the same
+            CUSTOM_PROMPT_TEMPLATE="You are an expert code reviewer. Review the following Git diff for quality, style, and correctness. 
             Your task:
 
               - Identify issues in code readability, style, and structure
@@ -95,20 +94,25 @@ jobs:
               4. Summary
 
             Use formatting like:
-              - Code blocks(\`\`\` code snippet \`\`\`) for code snippets and ensure they are properly closed
+              - Code blocks(\`\`\`) for code snippets and ensure they are properly closed
               - Tables for issues if needed
 
             Only return review comments. No extra explanation or reasoning.
 
             Here is the git diff:
             \`\`\`diff
-            $PR_DIFF
-            \`\`\`
-
             "
 
             echo "--- Sending diff to Ollama for review ---"
-            echo "$CUSTOM_PROMPT" | ollama run sam860/qwen3:8b-Q5_K_XL --no-spinner > ollama_raw_review.txt
+            
+            # THE FIX IS HERE: Add '2>/dev/null' to discard the spinner animation
+            {
+              echo "$CUSTOM_PROMPT_TEMPLATE"
+              cat "$DIFF_FILE_PATH"
+              echo
+              echo "\`\`\`"
+            } | ollama run sam860/qwen3:8b-Q5_K_XL > ollama_raw_review.txt 2>/dev/null
+
 
             echo "--- Ollama PR Review Result ---"
             echo "::group::Ollama Review Output"
