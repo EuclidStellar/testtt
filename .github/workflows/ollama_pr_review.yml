@@ -93,9 +93,11 @@ jobs:
               3. Top Critical Issues at the end
               4. Summary
 
-            Use formatting like:
+            Mandatory formatting style like:
               - Code blocks(\`\`\`) for code snippets and ensure they are properly closed
-              - Tables for issues if needed
+              - Tables for issues and suggestions
+              - Use headings for sections (e.g., ## Summary, ## Findings, ## Critical Issues, ## Summary)
+              - Use bullet points for lists
 
             Only return review comments. No extra explanation or reasoning.
 
