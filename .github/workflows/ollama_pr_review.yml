@@ -93,7 +93,7 @@ jobs:
             End with a summary of the most critical issues found."
 
             echo "--- Sending diff to Ollama for review ---"
-            echo "$CUSTOM_PROMPT" | ollama run qwen3:14b > ollama_raw_review.txt
+            echo "$CUSTOM_PROMPT" | ollama run MHKetbi/Unsloth-Phi-4-mini-instruct:q8_0 > ollama_raw_review.txt
 
             echo "--- Ollama PR Review Result ---"
             echo "::group::Ollama Review Output"
