@@ -28,18 +28,101 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
           
-      - name: Check diff size and truncate if needed
+      - name: Check diff size and apply file priority filtering
         run: |
           DIFF_SIZE=$(wc -c < pr_diff.txt)
-          echo "Diff size: $DIFF_SIZE bytes"
+          ESTIMATED_TOKENS=$((DIFF_SIZE / 4))
           
-          # GitHub Models typically have token limits, so truncate large diffs
-          if [ $DIFF_SIZE -gt 50000 ]; then
-            echo "Diff too large, truncating to first 50000 characters..."
-            head -c 50000 pr_diff.txt > pr_diff_truncated.txt
-            mv pr_diff_truncated.txt pr_diff.txt
-            echo "--- DIFF TRUNCATED DUE TO SIZE ---" >> pr_diff.txt
+          echo "Original diff size: $DIFF_SIZE bytes (~$ESTIMATED_TOKENS tokens)"
+          
+          # If diff is too large, apply priority filtering
+          if [ $ESTIMATED_TOKENS -gt 6000 ]; then
+            echo "⚠️  Diff exceeds token limits, applying priority file filtering..."
+            
+            # Get list of all changed files
+            git diff origin/${{ github.base_ref }}...HEAD --name-only > all_changed_files.txt
+            echo "Total files changed: $(wc -l < all_changed_files.txt)"
+            
+            # Define priority file patterns (will work in any subdirectory)
+            # High priority: source code, configs, security files
+            grep -E '\.(js|jsx|ts|tsx|py|java|go|rs|php|rb|swift|kt|scala|cs|cpp|c|h|hpp)$|package\.json|package-lock\.json|yarn\.lock|requirements\.txt|Gemfile|Cargo\.toml|pom\.xml|build\.gradle|Dockerfile|docker-compose\.yml|\.env|\.env\.|config\.|\.config|\.yml$|\.yaml$|\.toml$|\.ini$|\.conf$|Makefile|CMakeLists\.txt' all_changed_files.txt > priority_files.txt || touch priority_files.txt
+            
+            # Medium priority: documentation, tests, styles
+            grep -E '\.(md|rst|txt|test\.js|spec\.js|\.test\.|\.spec\.|test_.*\.py|.*_test\.py|\.css|\.scss|\.sass|\.less|\.styl)$|README|CHANGELOG|LICENSE' all_changed_files.txt > medium_priority_files.txt || touch medium_priority_files.txt
+            
+            echo "High priority files found: $(wc -l < priority_files.txt)"
+            echo "Medium priority files found: $(wc -l < medium_priority_files.txt)"
+            
+            # Create focused diff starting with high priority files
+            echo "# Focused Code Review - Priority Files Only" > focused_diff.txt
+            echo "" >> focused_diff.txt
+            
+            if [ -s priority_files.txt ]; then
+              echo "## High Priority Files (Source Code & Configuration)" >> focused_diff.txt
+              echo "" >> focused_diff.txt
+              
+              while read -r file; do
+                if [ -n "$file" ]; then
+                  echo "### File: \`$file\`" >> focused_diff.txt
+                  echo "" >> focused_diff.txt
+                  git diff origin/${{ github.base_ref }}...HEAD -- "$file" >> focused_diff.txt
+                  echo "" >> focused_diff.txt
+                fi
+              done < priority_files.txt
+            fi
+            
+            # Check if we have space for medium priority files
+            CURRENT_SIZE=$(wc -c < focused_diff.txt)
+            CURRENT_TOKENS=$((CURRENT_SIZE / 4))
+            
+            if [ $CURRENT_TOKENS -lt 4000 ] && [ -s medium_priority_files.txt ]; then
+              echo "## Medium Priority Files (Tests & Documentation)" >> focused_diff.txt
+              echo "" >> focused_diff.txt
+              
+              while read -r file; do
+                if [ -n "$file" ]; then
+                  # Add file only if we don't exceed token limit
+                  git diff origin/${{ github.base_ref }}...HEAD -- "$file" > temp_file_diff.txt
+                  TEMP_SIZE=$(wc -c < temp_file_diff.txt)
+                  TEMP_TOKENS=$((TEMP_SIZE / 4))
+                  
+                  if [ $((CURRENT_TOKENS + TEMP_TOKENS)) -lt 5500 ]; then
+                    echo "### File: \`$file\`" >> focused_diff.txt
+                    echo "" >> focused_diff.txt
+                    cat temp_file_diff.txt >> focused_diff.txt
+                    echo "" >> focused_diff.txt
+                    CURRENT_TOKENS=$((CURRENT_TOKENS + TEMP_TOKENS))
+                  else
+                    echo "### Remaining files truncated due to token limits" >> focused_diff.txt
+                    break
+                  fi
+                fi
+              done < medium_priority_files.txt
+            fi
+            
+            # Replace original diff with focused version
+            mv focused_diff.txt pr_diff.txt
+            
+            NEW_SIZE=$(wc -c < pr_diff.txt)
+            NEW_TOKENS=$((NEW_SIZE / 4))
+            echo "✅ Focused diff size: $NEW_SIZE bytes (~$NEW_TOKENS tokens)"
+            
+            # Final safety check - truncate if still too large
+            if [ $NEW_TOKENS -gt 7000 ]; then
+              echo "⚠️  Still too large after filtering, applying final truncation..."
+              head -c 28000 pr_diff.txt > truncated_diff.txt
+              echo "" >> truncated_diff.txt
+              echo "--- REVIEW TRUNCATED DUE TO TOKEN LIMITS ---" >> truncated_diff.txt
+              mv truncated_diff.txt pr_diff.txt
+              echo "Final size: $(wc -c < pr_diff.txt) bytes"
+            fi
+            
+          else
+            echo "✅ Diff size within limits, proceeding with full review"
           fi
+          
+          # Clean up temporary files
+          rm -f all_changed_files.txt priority_files.txt medium_priority_files.txt temp_file_diff.txt
 
       - name: Review PR with GitHub Models
         id: review_with_github_models
