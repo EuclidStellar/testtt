@@ -63,46 +63,62 @@ jobs:
               return;
             }
 
-            const prompt = "You are an expert code reviewer. Analyze this git diff and provide a comprehensive review.\n\n" +
-              "IMPORTANT FORMATTING REQUIREMENTS:\n" +
-              "1. Use proper markdown formatting with clear sections\n" +
-              "2. Include code snippets for examples (use triple backticks with language)\n" +
-              "3. Use tables for structured data when appropriate\n" +
-              "4. Use clear headings and subheadings\n" +
-              "5. Provide specific line references when possible\n" +
-              "6. Include both problems and solutions\n" +
-              "7. Use > blockquotes for important notes\n" +
-              "8. NO emojis - keep it professional\n\n" +
-              "Structure your review as follows:\n\n" +
-              "## Code Review Summary\n" +
-              "[Brief overview of changes and overall assessment]\n\n" +
-              "## Critical Issues\n" +
-              "[High priority issues that must be addressed]\n\n" +
-              "## Code Quality Analysis\n\n" +
-              "### Security Concerns\n" +
-              "[Security issues with code examples]\n\n" +
-              "### Performance Issues\n" +
-              "[Performance problems with suggestions]\n\n" +
-              "### Best Practices\n" +
-              "[Coding standard violations and improvements]\n\n" +
-              "## Detailed Findings\n\n" +
-              "| Category | Issue | Location | Severity | Recommendation |\n" +
-              "|----------|-------|----------|----------|-----------------|\n" +
-              "| [Category] | [Description] | [File:Line] | [High/Medium/Low] | [Solution] |\n\n" +
-              "## Code Examples\n\n" +
-              "### Current Implementation\n" +
-              "[Show problematic code with explanations]\n\n" +
-              "### Suggested Improvements\n" +
-              "[Show improved code with explanations]\n\n" +
-              "## Testing Recommendations\n" +
-              "[Specific tests that should be added]\n\n" +
-              "## Documentation Notes\n" +
-              "[Documentation improvements needed]\n\n" +
-              "---\n\n" +
-              "Here's the diff to review:\n" +
-              "```diff\n" +
-              prDiff +
-              "\n```";
+            const prompt = "
+            You are an expert code reviewer. Analyze the provided git diff and deliver a comprehensive, professional code review. Adhere strictly to the following formatting and content guidelines:
+
+            ### IMPORTANT FORMATTING REQUIREMENTS:
+            1. Use proper markdown with clear sections and structured formatting.
+            2. Include relevant code snippets as examples using triple backticks, specifying the language (e.g., ` ```language `).
+            3. Use tables for presenting structured data when applicable.
+            4. Organize content with clear headings and subheadings.
+            5. Provide specific line references to the code whenever possible.
+            6. Highlight both problems and suggested solutions for improvement.
+            7. Use `> blockquotes` for emphasizing critical notes.
+            8. Maintain a professional tone—do not include emojis.
+
+            ### STRUCTURE YOUR REVIEW AS FOLLOWS:
+
+            #### ## Code Review Summary
+            Provide a brief overview of the changes included in the diff and an overall assessment of their quality.
+
+            #### ## Critical Issues
+            List high-priority issues that require immediate attention, explaining their potential impacts and providing clear guidance for resolution.
+
+            #### ## Code Quality Analysis
+            Break down the analysis into the following subcategories:
+            - **### Security Concerns**: Highlight security issues, providing context and code examples.
+            - **### Performance Issues**: Identify performance problems and offer optimization suggestions.
+            - **### Best Practices**: Note violations of coding standards or areas for improvement based on best practices.
+
+            #### ## Detailed Findings
+            Present detailed observations in a structured table format:
+
+            | Category        | Issue Description              | Location (File:Line) | Severity (High/Medium/Low) | Recommendation        |
+            |-----------------|--------------------------------|-----------------------|----------------------------|-----------------------|
+            | <Category>      | <Description of the issue>    | <File name>:<Line No> | <Severity level>           | <Suggested solution>  |
+
+            #### ## Code Examples
+            Provide clear examples to illustrate issues and solutions:
+            - **### Current Implementation**: Show the problematic code snippet and explain why it is an issue.
+            - **### Suggested Improvements**: Present the corrected or improved version of the code with explanations.
+
+            #### ## Testing Recommendations
+            Include specific recommendations for tests that should be added or updated to ensure code quality and functionality.
+
+            #### ## Documentation Notes
+            Suggest improvements or additions to documentation that would enhance clarity and maintainability.
+
+            ---
+
+            ### Context-Specific Instruction
+            - Ensure that the review is to the point and contextual to the provided code.
+            - Avoid truncating code snippets; include full examples where necessary for clarity.
+            - Present findings in a way that is logical, intuitive, and easy to follow.
+
+            Here is the diff to review:
+            ```diff
+            prDiff
+            ```";
 
             try {
               // Call GitHub Models API
@@ -124,7 +140,7 @@ jobs:
                       content: prompt
                     }
                   ],
-                  model: "Phi-4-mini-instruct",
+                  model: "gpt-4.1-nano",
                   temperature: 0.1,
                   max_tokens: 4000
                 })
