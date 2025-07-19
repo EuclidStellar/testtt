@@ -1,1 +1,158 @@
-package proto
+syntax = "proto3";
+
+package cache;
+
+option go_package = "github.com/yourusername/distributed-cache/internal/proto";
+
+// Cache service for distributed cache operations
+service CacheService {
+    // Cache operations
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc Set(SetRequest) returns (SetResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+    
+    // Cluster operations
+    rpc Ping(PingRequest) returns (PingResponse);
+    rpc Join(JoinRequest) returns (JoinResponse);
+    rpc Leave(LeaveRequest) returns (LeaveResponse);
+    
+    // Raft operations
+    rpc RequestVote(VoteRequest) returns (VoteResponse);
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+    
+    // Monitoring
+    rpc GetStats(StatsRequest) returns (StatsResponse);
+    rpc GetMetrics(MetricsRequest) returns (MetricsResponse);
+}
+
+// Cache operation messages
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    bool found = 1;
+    bytes value = 2;
+    int64 expires_at = 3;
+    int64 created_at = 4;
+    int64 accessed_at = 5;
+    int64 access_count = 6;
+    string error = 7;
+}
+
+message SetRequest {
+    string key = 1;
+    bytes value = 2;
+    int64 ttl_seconds = 3;
+}
+
+message SetResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// Cluster operation messages
+message PingRequest {
+    string node_id = 1;
+}
+
+message PingResponse {
+    string node_id = 1;
+    int64 timestamp = 2;
+    string status = 3;
+}
+
+message JoinRequest {
+    string node_id = 1;
+    string address = 2;
+    int32 port = 3;
+}
+
+message JoinResponse {
+    bool success = 1;
+    repeated string peers = 2;
+    string error = 3;
+}
+
+message LeaveRequest {
+    string node_id = 1;
+}
+
+message LeaveResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// Raft consensus messages
+message VoteRequest {
+    int64 term = 1;
+    string candidate_id = 2;
+    int64 last_log_index = 3;
+    int64 last_log_term = 4;
+}
+
+message VoteResponse {
+    int64 term = 1;
+    bool vote_granted = 2;
+}
+
+message AppendEntriesRequest {
+    int64 term = 1;
+    string leader_id = 2;
+    int64 prev_log_index = 3;
+    int64 prev_log_term = 4;
+    repeated LogEntry entries = 5;
+    int64 leader_commit = 6;
+}
+
+message AppendEntriesResponse {
+    int64 term = 1;
+    bool success = 2;
+}
+
+message LogEntry {
+    int64 term = 1;
+    int64 index = 2;
+    string command_type = 3;
+    bytes command_data = 4;
+}
+
+// Monitoring messages
+message StatsRequest {
+    string node_id = 1;
+}
+
+message StatsResponse {
+    int64 hits = 1;
+    int64 misses = 2;
+    int64 size = 3;
+    int64 max_size = 4;
+    int64 evictions = 5;
+    string error = 6;
+}
+
+message MetricsRequest {
+    string node_id = 1;
+    int64 since_timestamp = 2;
+}
+
+message MetricsResponse {
+    repeated Metric metrics = 1;
+    string error = 2;
+}
+
+message Metric {
+    string name = 1;
+    double value = 2;
+    int64 timestamp = 3;
+    map<string, string> labels = 4;
+}
