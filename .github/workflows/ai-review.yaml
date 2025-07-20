@@ -28,110 +28,133 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
           
-      - name: Advanced diff processing with strict token limits
+      - name: Smart file prioritization with 5500 token limit
         run: |
           DIFF_SIZE=$(wc -c < pr_diff.txt)
           ESTIMATED_TOKENS=$((DIFF_SIZE / 4))
           
-          # Much more conservative token limits for GPT-4o-mini
-          MAX_DIFF_TOKENS=4000  # Reduced from 6000 to account for prompt overhead
-          SAFE_DIFF_TOKENS=3500 # Even safer limit
+          # Token limits optimized for gpt-4.1-nano
+          MAX_DIFF_TOKENS=5500
+          SAFE_DIFF_TOKENS=5000  # Conservative buffer
           
           echo "Original diff size: $DIFF_SIZE bytes (~$ESTIMATED_TOKENS tokens)"
           echo "Max allowed tokens: $MAX_DIFF_TOKENS"
           
           if [ $ESTIMATED_TOKENS -gt $MAX_DIFF_TOKENS ]; then
-            echo "⚠️  Diff exceeds token limits, applying advanced filtering..."
+            echo "⚠️  Diff exceeds token limits, applying smart file prioritization..."
             
-            # Get changed files with their sizes
+            # Get changed files with detailed analysis
             git diff origin/${{ github.base_ref }}...HEAD --name-only > all_changed_files.txt
             
-            # Create file priority and size analysis
+            # Advanced file priority and size analysis
             > priority_analysis.txt
             while read -r file; do
               if [ -n "$file" ] && [ -f "$file" ]; then
                 FILE_DIFF_SIZE=$(git diff origin/${{ github.base_ref }}...HEAD -- "$file" | wc -c)
                 FILE_TOKENS=$((FILE_DIFF_SIZE / 4))
                 
-                # Assign priority scores
-                PRIORITY=3  # Default low priority
+                # Advanced priority scoring system
+                PRIORITY=5  # Default lowest priority
+                CATEGORY="Other"
                 
-                # High priority patterns
-                if echo "$file" | grep -qE '\.(js|jsx|ts|tsx|py|java|go|rs|php|rb|swift|kt|scala|cs|cpp|c|h|hpp)$'; then
+                # Critical priority (1) - Core application files
+                if echo "$file" | grep -qE '\.(js|jsx|ts|tsx|py|java|go|rs|php|rb|swift|kt|scala|cs|cpp|c|h|hpp)$' && ! echo "$file" | grep -qE '(test|spec|mock)'; then
                   PRIORITY=1
-                elif echo "$file" | grep -qE 'package\.json|package-lock\.json|requirements\.txt|Dockerfile|\.env|config\.|\.yml$|\.yaml$'; then
-                  PRIORITY=1
-                # Medium priority
-                elif echo "$file" | grep -qE '\.(test\.|spec\.|_test\.py|test_.*\.py)$'; then
+                  CATEGORY="Core Code"
+                # High priority (2) - Configuration and security
+                elif echo "$file" | grep -qE 'package\.json|package-lock\.json|requirements\.txt|Dockerfile|docker-compose\.yml|\.env|\.env\.|config\.|\.config|\.yml$|\.yaml$|\.toml$|\.ini$|\.conf$|Makefile|CMakeLists\.txt'; then
                   PRIORITY=2
-                elif echo "$file" | grep -qE '\.(md|rst|css|scss)$'; then
-                  PRIORITY=2
+                  CATEGORY="Configuration"
+                # Medium-High priority (3) - Tests and critical docs
+                elif echo "$file" | grep -qE '\.(test\.|spec\.|_test\.py|test_.*\.py)$|README|CHANGELOG|LICENSE'; then
+                  PRIORITY=3
+                  CATEGORY="Tests/Docs"
+                # Medium priority (4) - Styles and medium docs
+                elif echo "$file" | grep -qE '\.(css|scss|sass|less|styl|md|rst|txt)$'; then
+                  PRIORITY=4
+                  CATEGORY="Styles/Docs"
                 fi
                 
-                echo "$PRIORITY:$FILE_TOKENS:$file" >> priority_analysis.txt
+                echo "$PRIORITY:$FILE_TOKENS:$CATEGORY:$file" >> priority_analysis.txt
               fi
             done < all_changed_files.txt
             
-            # Sort by priority (1=high, 2=medium, 3=low) then by size (smaller first)
+            # Sort by priority (1=critical, 5=low) then by size (smaller first for better coverage)
             sort -t: -k1,1n -k2,2n priority_analysis.txt > sorted_files.txt
             
-            # Build focused diff within token limits
-            echo "# Focused Code Review - Token-Limited Analysis" > focused_diff.txt
+            # Build focused diff with smart token management
+            echo "# Focused Code Review - Smart File Prioritization" > focused_diff.txt
             echo "" >> focused_diff.txt
-            echo "**Note:** This review covers the most critical files due to diff size constraints." >> focused_diff.txt
+            echo "**Analysis Strategy:** Prioritizing critical code files, configurations, and tests within token constraints." >> focused_diff.txt
             echo "" >> focused_diff.txt
             
-            CURRENT_TOKENS=100  # Account for headers
+            CURRENT_TOKENS=150  # Account for headers and metadata
             FILES_INCLUDED=0
+            declare -A CATEGORY_COUNT
             
-            while IFS=':' read -r priority tokens filepath; do
+            echo "## Files Included in Review:" >> focused_diff.txt
+            echo "" >> focused_diff.txt
+            
+            while IFS=':' read -r priority tokens category filepath; do
               if [ -n "$filepath" ] && [ $((CURRENT_TOKENS + tokens)) -lt $SAFE_DIFF_TOKENS ]; then
-                echo "### File: \`$filepath\` (Priority: $priority)" >> focused_diff.txt
+                echo "### $category: \`$filepath\`" >> focused_diff.txt
+                echo "**Priority:** $priority | **Estimated Impact:** $tokens tokens" >> focused_diff.txt
                 echo "" >> focused_diff.txt
                 git diff origin/${{ github.base_ref }}...HEAD -- "$filepath" >> focused_diff.txt
                 echo "" >> focused_diff.txt
+                echo "---" >> focused_diff.txt
+                echo "" >> focused_diff.txt
+                
                 CURRENT_TOKENS=$((CURRENT_TOKENS + tokens))
                 FILES_INCLUDED=$((FILES_INCLUDED + 1))
+                CATEGORY_COUNT[$category]=$((${CATEGORY_COUNT[$category]} + 1))
                 
-                echo "✓ Included $filepath ($tokens tokens, running total: $CURRENT_TOKENS)"
+                echo "✓ Included $filepath [$category] ($tokens tokens, running total: $CURRENT_TOKENS)"
               else
-                echo "✗ Skipped $filepath ($tokens tokens) - would exceed limit"
+                echo "✗ Skipped $filepath [$category] ($tokens tokens) - would exceed limit"
               fi
             done < sorted_files.txt
             
+            # Add summary footer
             echo "" >> focused_diff.txt
-            echo "---" >> focused_diff.txt
-            echo "**Files included in review:** $FILES_INCLUDED" >> focused_diff.txt
-            echo "**Estimated tokens:** $CURRENT_TOKENS" >> focused_diff.txt
+            echo "## Review Scope Summary" >> focused_diff.txt
+            echo "| Category | Files Reviewed |" >> focused_diff.txt
+            echo "|----------|----------------|" >> focused_diff.txt
+            for category in "${!CATEGORY_COUNT[@]}"; do
+              echo "| $category | ${CATEGORY_COUNT[$category]} |" >> focused_diff.txt
+            done
+            echo "" >> focused_diff.txt
+            echo "**Total Files:** $FILES_INCLUDED | **Token Usage:** ~$CURRENT_TOKENS/$MAX_DIFF_TOKENS" >> focused_diff.txt
             
             mv focused_diff.txt pr_diff.txt
             
             NEW_SIZE=$(wc -c < pr_diff.txt)
             NEW_TOKENS=$((NEW_SIZE / 4))
-            echo "✅ Final diff: $NEW_SIZE bytes (~$NEW_TOKENS tokens)"
+            echo "✅ Prioritized diff: $NEW_SIZE bytes (~$NEW_TOKENS tokens)"
             
           else
-            echo "✅ Diff size within limits"
+            echo "✅ Diff size within limits, proceeding with full review"
           fi
           
-          # Final safety truncation if still too large
+          # Final safety check with hard limits
           FINAL_SIZE=$(wc -c < pr_diff.txt)
           FINAL_TOKENS=$((FINAL_SIZE / 4))
           
           if [ $FINAL_TOKENS -gt $SAFE_DIFF_TOKENS ]; then
-            echo "⚠️  Applying emergency truncation..."
-            # Conservative character limit (3500 tokens * 4 chars/token)
-            head -c 14000 pr_diff.txt > truncated.txt
+            echo "⚠️  Applying final safety truncation..."
+            # Hard limit: 5000 tokens * 4 chars/token = 20000 chars
+            head -c 20000 pr_diff.txt > truncated.txt
             echo "" >> truncated.txt
-            echo "--- REVIEW TRUNCATED: DIFF TOO LARGE FOR MODEL ---" >> truncated.txt
+            echo "--- DIFF TRUNCATED: REACHED SAFE TOKEN LIMIT ---" >> truncated.txt
+            echo "**Remaining files require separate review**" >> truncated.txt
             mv truncated.txt pr_diff.txt
-            echo "Emergency truncated to: $(wc -c < pr_diff.txt) bytes"
+            echo "Safety truncated to: $(wc -c < pr_diff.txt) bytes"
           fi
           
-          # Clean up
+          # Cleanup temporary files
           rm -f all_changed_files.txt priority_analysis.txt sorted_files.txt
 
-      - name: Review PR with GitHub Models
+      - name: Review PR with GitHub Models (GPT-4.1-nano)
         id: review_with_github_models
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -152,29 +175,76 @@ jobs:
               return;
             }
 
-            // More concise prompt to save tokens
-            const prompt = `Review this git diff focusing on critical issues, security, and best practices. Be concise but thorough:
+            // Comprehensive prompt with code example requirements
+            const prompt = `You are an expert code reviewer. Analyze the provided git diff and deliver a comprehensive, professional code review following the exact structure below.
 
-            \`\`\`diff
-            ${prDiff}
-            \`\`\`
+            ### FORMATTING REQUIREMENTS:
+            - Use proper markdown with clear sections
+            - Include specific code snippets with language tags
+            - Provide concrete examples for improvements
+            - Use tables for structured findings
+            - Reference specific file locations
+            - Professional tone, no emojis
 
-            Structure your response as:
-            ## Summary
-            Brief overview of changes and overall assessment.
+            ### REQUIRED STRUCTURE:
+
+            ## Code Review Summary
+            Brief overview of changes and overall quality assessment.
 
             ## Critical Issues
-            High-priority problems requiring immediate attention.
+            List high-priority issues requiring immediate attention with clear impact explanations.
 
-            ## Key Findings
-            | File | Issue | Severity | Recommendation |
-            |------|-------|----------|----------------|
+            ## Code Quality Analysis
 
-            ## Security & Performance
-            Notable security or performance concerns.
+            ### Security Concerns
+            Identify security issues with code examples and explanations.
 
-            ## Recommendations  
-            Top 3-5 actionable improvements.`;
+            ### Performance Issues  
+            Highlight performance problems with optimization suggestions.
+
+            ### Best Practices
+            Note coding standard violations and improvement opportunities.
+
+            ## Detailed Findings
+            | Category | Issue Description | Location (File:Line) | Severity | Recommendation |
+            |----------|-------------------|---------------------|----------|----------------|
+            | Example  | Description here  | file.js:42         | High     | Specific fix   |
+
+            ## Code Examples
+
+            ### Current Implementation
+            Show problematic code snippets with explanations of why they're issues.
+
+            \`\`\`javascript
+            // Current problematic code
+            const example = "show actual code from diff";
+            \`\`\`
+
+            **Issue:** Explain what's wrong with this code.
+
+            ### Suggested Improvements
+            Present corrected versions with detailed explanations:
+
+            \`\`\`javascript  
+            // Improved version
+            const betterExample = "show how to fix it";
+            // Add validation, error handling, etc.
+            \`\`\`
+
+            **Improvement:** Explain why this is better and what benefits it provides.
+
+            ## Testing Recommendations
+            Specific test suggestions for the changes.
+
+            ## Documentation Notes
+            Documentation improvements or additions needed.
+
+            ---
+
+            Here is the diff to review:
+            \`\`\`diff
+            ${prDiff}
+            \`\`\``;
 
             try {
               const response = await fetch('https://models.github.ai/inference/chat/completions', {
@@ -188,50 +258,115 @@ jobs:
                   messages: [
                     {
                       role: "system",
-                      content: "You are a senior code reviewer. Provide concise, actionable feedback focusing on critical issues, security, and best practices."
+                      content: "You are a senior software engineer conducting thorough code reviews. Provide detailed, actionable feedback with proper markdown formatting, concrete code examples, and structured recommendations. Focus on security, performance, maintainability, and best practices. Always include before/after code examples for suggested improvements."
                     },
                     {
-                      role: "user", 
+                      role: "user",
                       content: prompt
                     }
                   ],
-                  model: "gpt-4o-mini",
+                  model: "gpt-4.1-nano",
                   temperature: 0.1,
-                  max_tokens: 2500  // Reduced to leave more room for input
+                  max_tokens: 4000
                 })
               });
 
               if (!response.ok) {
                 const errorText = await response.text();
                 
-                // If still hitting token limits, try with even smaller diff
-                if (response.status === 413 || errorText.includes('tokens_limit_reached')) {
-                  console.log('Still hitting token limit, creating fallback review...');
+                // Graceful fallback for token limits or API errors
+                if (response.status === 413 || errorText.includes('tokens_limit_reached') || errorText.includes('too large')) {
+                  console.log('Triggering graceful fallback due to size limits...');
                   
-                  const fallbackReview = `## AI Code Review - Large Diff Summary
+                  // Create comprehensive fallback review
+                  const changedFiles = prDiff.split('\n')
+                    .filter(line => line.startsWith('diff --git'))
+                    .map(line => {
+                      const match = line.match(/b\/(.+)/);
+                      return match ? match[1] : 'Unknown';
+                    })
+                    .slice(0, 15);
 
-            This pull request contains a large number of changes that exceed the AI model's token limits for detailed analysis.
+                  const addedLines = prDiff.split('\n').filter(line => line.startsWith('+')).length;
+                  const removedLines = prDiff.split('\n').filter(line => line.startsWith('-')).length;
+                  
+                  const fallbackReview = `## AI Code Review - Large Diff Analysis
 
-            **Diff Statistics:**
-            - **Size:** ${prDiff.length} characters
-            - **Estimated tokens:** ${Math.floor(prDiff.length / 4)}
+            This pull request contains extensive changes that exceed optimal token limits for detailed AI analysis. However, here's a comprehensive review strategy:
 
-            ### Manual Review Recommended
-            Due to the size of this diff, please ensure:
+            ### Change Overview
+            - **Files Modified:** ${changedFiles.length}${changedFiles.length >= 15 ? '+' : ''}
+            - **Lines Added:** ~${addedLines}
+            - **Lines Removed:** ~${removedLines}
+            - **Diff Size:** ${Math.floor(prDiff.length / 1024)}KB (~${Math.floor(prDiff.length / 4)} tokens)
 
-            1. **Security Review:** Manually check for security vulnerabilities
-            2. **Testing:** Verify all changes are covered by appropriate tests  
-            3. **Performance:** Review for potential performance impacts
-            4. **Documentation:** Ensure documentation is updated as needed
-            5. **Breaking Changes:** Confirm backward compatibility
+            ### Files Requiring Manual Review
 
-            ### Changed Files Preview
-            The following files were modified:
-            ${prDiff.split('\n').filter(line => line.startsWith('diff --git')).slice(0, 10).map(line => `- \`${line.split(' ')[3]?.replace('b/', '') || 'Unknown'}\``).join('\n')}
-            ${prDiff.split('\n').filter(line => line.startsWith('diff --git')).length > 10 ? '\n- *...and more files*' : ''}
+            #### High Priority Files
+            ${changedFiles.filter(f => f.match(/\.(js|jsx|ts|tsx|py|java|go|rs|php|rb)$/)).map(f => `- \`${f}\` - Core application logic`).join('\n')}
+
+            #### Configuration Files  
+            ${changedFiles.filter(f => f.match(/package\.json|requirements\.txt|Dockerfile|\.env|config/)).map(f => `- \`${f}\` - System configuration`).join('\n')}
+
+            #### Other Files
+            ${changedFiles.filter(f => !f.match(/\.(js|jsx|ts|tsx|py|java|go|rs|php|rb)$/) && !f.match(/package\.json|requirements\.txt|Dockerfile|\.env|config/)).map(f => `- \`${f}\``).join('\n')}
+
+            ### Recommended Manual Review Checklist
+
+            #### 🔒 Security Review
+            - [ ] Check for hardcoded secrets, API keys, or passwords
+            - [ ] Validate input sanitization and XSS prevention  
+            - [ ] Review authentication and authorization changes
+            - [ ] Examine SQL queries for injection vulnerabilities
+            - [ ] Verify secure communication protocols
+
+            #### ⚡ Performance Review  
+            - [ ] Look for inefficient database queries or N+1 problems
+            - [ ] Check for memory leaks in loops or event handlers
+            - [ ] Review caching strategies and implementation
+            - [ ] Examine bundle size impact for frontend changes
+            - [ ] Validate algorithm complexity for data processing
+
+            #### 🧪 Testing Requirements
+            - [ ] Ensure unit tests cover new functionality
+            - [ ] Add integration tests for API changes
+            - [ ] Update end-to-end tests for UI modifications
+            - [ ] Verify edge cases and error scenarios are tested
+            - [ ] Check test coverage metrics
+
+            #### 📚 Code Quality Standards
+            - [ ] Consistent naming conventions and code style
+            - [ ] Proper error handling and logging
+            - [ ] Documentation and comments for complex logic
+            - [ ] Dependencies are necessary and up-to-date
+            - [ ] No dead code or unused imports
+
+            #### 🔄 Breaking Changes Assessment
+            - [ ] API compatibility with existing integrations
+            - [ ] Database migration safety and rollback plans
+            - [ ] Configuration changes deployment strategy
+            - [ ] Backward compatibility for public interfaces
+
+            ### Suggested Review Strategy
+
+            1. **Start with Critical Files:** Focus on core business logic and security-sensitive components
+            2. **Review in Small Chunks:** Break down the review by functional area or file type
+            3. **Use Static Analysis:** Run linters, security scanners, and code quality tools
+            4. **Test Thoroughly:** Deploy to staging environment and run comprehensive tests
+            5. **Pair Review:** Consider pair programming sessions for complex changes
+
+            ### Next Steps
+            - Consider breaking this large PR into smaller, focused pull requests
+            - Run automated security and quality scans
+            - Schedule dedicated review sessions with team members
+            - Ensure proper staging environment testing before merge
 
             ---
-            *This is an automated message due to diff size limitations.*`;
+            **Review Status:** Manual review required due to diff complexity  
+            **Generated:** ${new Date().toLocaleString()}  
+            **Fallback Reason:** ${response.status === 413 ? 'Token limit exceeded' : 'API error encountered'}
+
+            > 💡 **Tip:** For better AI reviews in the future, consider smaller, more focused pull requests (< 500 lines changed).`;
 
                   await github.rest.issues.createComment({
                     issue_number: context.issue.number,
@@ -240,6 +375,7 @@ jobs:
                     body: fallbackReview
                   });
                   
+                  console.log('✅ Graceful fallback review posted successfully');
                   return;
                 }
                 
@@ -249,17 +385,22 @@ jobs:
               const data = await response.json();
               const reviewContent = data.choices[0].message.content;
               
-              const reviewComment = `## AI Code Review Report
+              // Enhanced review comment with metadata
+              const reviewComment = `## 🤖 AI Code Review Report
 
             ${reviewContent}
 
             ---
-            **Review Details:**
-            - **Model:** GitHub Models GPT-4o-mini  
-            - **Generated:** ${new Date().toLocaleString()}
-            - **Diff Size:** ${prDiff.length} characters (~${Math.floor(prDiff.length / 4)} tokens)
+            ### Review Metadata
+            | Detail | Value |
+            |--------|--------|
+            | **AI Model** | GitHub Models GPT-4.1-nano |
+            | **Generated** | ${new Date().toLocaleString()} |
+            | **Diff Size** | ${Math.floor(prDiff.length / 1024)}KB (${prDiff.length} chars) |
+            | **Est. Tokens** | ~${Math.floor(prDiff.length / 4)} tokens |
+            | **Review Type** | Automated Analysis |
 
-            > This review is AI-generated. Please verify suggestions before implementing changes.`;
+            > ⚠️ **Important:** This is an AI-generated review. Please verify all suggestions and thoroughly test changes before implementing. Consider this as a starting point for human review, not a replacement.`;
 
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
@@ -268,36 +409,64 @@ jobs:
                 body: reviewComment
               });
 
-              console.log('✅ PR review comment posted successfully');
+              console.log('✅ Comprehensive PR review posted successfully');
               
             } catch (error) {
-              console.error('Error calling GitHub Models API:', error);
+              console.error('Error in GitHub Models API call:', error);
               
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## AI Code Review - Error
+              // Enhanced error reporting
+              const errorReport = `## ❌ AI Code Review - Error Occurred
 
-            An error occurred while generating the code review:
+            An error occurred while generating the automated code review.
 
+            ### Error Details
             \`\`\`
             ${error.message}
             \`\`\`
 
-            Please check the workflow logs for more details and consider manually reviewing this large diff.`
+            ### Manual Review Required
+            Please proceed with manual code review using these guidelines:
+
+            #### Quick Review Checklist
+            - **Security:** Check for vulnerabilities and exposed credentials
+            - **Performance:** Look for inefficient code patterns  
+            - **Testing:** Ensure adequate test coverage
+            - **Documentation:** Verify code is properly documented
+            - **Standards:** Confirm adherence to team coding standards
+
+            #### Troubleshooting
+            - Check workflow logs for detailed error information
+            - Verify GitHub Models API token permissions
+            - Consider reducing diff size if token limits were exceeded
+
+            ---
+            **Error Time:** ${new Date().toLocaleString()}  
+            **Suggested Action:** Manual review and investigate workflow configuration`;
+
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: errorReport
               });
               
-              core.setFailed('Failed to generate AI review: ' + error.message);
+              core.setFailed(`Failed to generate AI review: ${error.message}`);
             }
 
-      - name: Show diff info
+      - name: Display final diff statistics
         if: always()
         run: |
           if [ -f pr_diff.txt ]; then
-            echo "Final diff size: $(wc -c < pr_diff.txt) bytes"
-            echo "Estimated tokens: $(( $(wc -c < pr_diff.txt) / 4 ))"
-            echo "Line count: $(wc -l < pr_diff.txt)"
+            FINAL_SIZE=$(wc -c < pr_diff.txt)
+            FINAL_TOKENS=$((FINAL_SIZE / 4))
+            LINES=$(wc -l < pr_diff.txt)
+            
+            echo "=== FINAL DIFF STATISTICS ==="
+            echo "📊 Size: $FINAL_SIZE bytes"
+            echo "🎯 Estimated tokens: $FINAL_TOKENS"
+            echo "📝 Lines: $LINES"
+            echo "✅ Token limit compliance: $([ $FINAL_TOKENS -le 5500 ] && echo "PASSED" || echo "EXCEEDED")"
+            echo "=========================="
           else
-            echo "No diff file found"
+            echo "❌ No diff file found"
           fi
