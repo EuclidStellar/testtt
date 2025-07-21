@@ -206,9 +206,15 @@ jobs:
             Note coding standard violations and improvement opportunities.
 
             ## Detailed Findings
+
+            <details>
+              <summary>📂 Click to expand issue table</summary>
+
             | Category | Issue Description | Location (File:Line) | Severity | Recommendation |
-            |----------|-------------------|---------------------|----------|----------------|
-            | Example  | Description here  | file.js:42         | High     | Specific fix   |
+            |----------|-------------------|----------------------|----------|----------------|
+            | Example  | Description here  | file.js:42           | High     | Specific fix   |
+
+            </details>
 
             ## Code Examples
 
