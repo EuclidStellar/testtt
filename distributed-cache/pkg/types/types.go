@@ -49,6 +49,9 @@ const (
 	LRU EvictionPolicy = iota
 	LFU
 	FIFO
+	LRUK  // LRU-K eviction
+	TwoQ  // 2Q eviction
+	ARC   // Adaptive Replacement Cache
 )
 
 // NodeStatus represents the status of a cluster node
