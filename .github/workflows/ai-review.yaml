@@ -182,7 +182,13 @@ jobs:
             - Use proper markdown with clear sections
             - Include specific code snippets with language tags
             - Provide concrete examples for improvements
-            - Use tables for structured findings
+            - Use tables for structured findings like example : 
+            <details>
+              <summary>📂 Click to expand issue table</summary>
+            | Category | Issue Description | Location (File:Line) | Severity | Recommendation |
+            |----------|-------------------|----------------------|----------|----------------|
+            | Example  | Description here  | file.js:42           | High     | Specific fix   |
+            </details>
             - Reference specific file locations
             - Professional tone, no emojis
 
