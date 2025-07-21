@@ -28,14 +28,14 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
           
-      - name: Smart file prioritization with 5500 token limit
+      - name: Smart file prioritization with 6200 token limit
         run: |
           DIFF_SIZE=$(wc -c < pr_diff.txt)
           ESTIMATED_TOKENS=$((DIFF_SIZE / 4))
           
           # Token limits optimized for gpt-4.1-nano
-          MAX_DIFF_TOKENS=5500
-          SAFE_DIFF_TOKENS=5000  # Conservative buffer
+          MAX_DIFF_TOKENS=6200
+          SAFE_DIFF_TOKENS=5500  # Conservative buffer
           
           echo "Original diff size: $DIFF_SIZE bytes (~$ESTIMATED_TOKENS tokens)"
           echo "Max allowed tokens: $MAX_DIFF_TOKENS"
@@ -477,7 +477,7 @@ jobs:
             echo "📊 Size: $FINAL_SIZE bytes"
             echo "🎯 Estimated tokens: $FINAL_TOKENS"
             echo "📝 Lines: $LINES"
-            echo "✅ Token limit compliance: $([ $FINAL_TOKENS -le 5500 ] && echo "PASSED" || echo "EXCEEDED")"
+            echo "✅ Token limit compliance: $([ $FINAL_TOKENS -le 6200 ] && echo "PASSED" || echo "EXCEEDED")"
             echo "=========================="
           else
             echo "❌ No diff file found"
