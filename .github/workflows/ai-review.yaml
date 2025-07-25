@@ -541,3 +541,32 @@ jobs:
           echo "📊 Total size: $TOTAL_SIZE bytes"
           echo "🎯 Total estimated tokens: $TOTAL_TOKENS"
           echo "=========================="
+
+      - name: Upload processed diff for download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-diff-${{ github.run_number }}
+          path: pr_diff.txt
+          retention-days: 30
+          if-no-files-found: warn
+        continue-on-error: true
+
+      - name: Create diff download summary
+        if: always()
+        run: |
+          if [ -f pr_diff.txt ]; then
+            DIFF_SIZE=$(wc -c < pr_diff.txt)
+            DIFF_TOKENS=$((DIFF_SIZE / 4))
+            DIFF_LINES=$(wc -l < pr_diff.txt)
+            
+            echo "=== DIFF DOWNLOAD INFORMATION ==="
+            echo "📋 Artifact name: ai-review-diff-${{ github.run_number }}"
+            echo "📊 File size: $DIFF_SIZE bytes (~$DIFF_TOKENS tokens)"
+            echo "📝 Line count: $DIFF_LINES"
+            echo "🔗 Download: Go to Actions tab → This workflow run → Artifacts section"
+            echo "⏰ Available for: 30 days"
+            echo "================================"
+          else
+            echo "❌ No diff file available for download"
+          fi
