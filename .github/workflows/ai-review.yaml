@@ -482,3 +482,62 @@ jobs:
           else
             echo "❌ No diff file found"
           fi
+
+      - name: Analyze individual file diffs for AI review
+        run: |
+          echo "=== INDIVIDUAL FILE DIFF ANALYSIS ==="
+          echo "Analyzing each file that will be sent to AI for review..."
+          echo ""
+          
+          # Get all changed files
+          git diff origin/${{ github.base_ref }}...HEAD --name-only > changed_files.txt
+          
+          # Initialize counters
+          TOTAL_FILES=0
+          TOTAL_SIZE=0
+          TOTAL_TOKENS=0
+          
+          # Create detailed analysis table
+          echo "| File | Size (bytes) | Est. Tokens | Lines | Status |"
+          echo "|------|--------------|-------------|-------|--------|"
+          
+          while read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ]; then
+              # Get diff for this specific file
+              FILE_DIFF=$(git diff origin/${{ github.base_ref }}...HEAD -- "$file")
+              
+              if [ -n "$FILE_DIFF" ]; then
+                FILE_SIZE=$(echo "$FILE_DIFF" | wc -c)
+                FILE_TOKENS=$((FILE_SIZE / 4))
+                FILE_LINES=$(echo "$FILE_DIFF" | wc -l)
+                
+                # Determine if file will likely be included in AI review
+                STATUS="✅ Included"
+                if [ $FILE_TOKENS -gt 1000 ]; then
+                  STATUS="⚠️  Large file"
+                elif [ $FILE_TOKENS -gt 2000 ]; then
+                  STATUS="❌ Too large"
+                fi
+                
+                # Add to totals
+                TOTAL_FILES=$((TOTAL_FILES + 1))
+                TOTAL_SIZE=$((TOTAL_SIZE + FILE_SIZE))
+                TOTAL_TOKENS=$((TOTAL_TOKENS + FILE_TOKENS))
+                
+                # Format file path for display (truncate if too long)
+                DISPLAY_FILE="$file"
+                if [ ${#file} -gt 40 ]; then
+                  DISPLAY_FILE="...${file: -37}"
+                fi
+                
+                echo "| \`$DISPLAY_FILE\` | $FILE_SIZE | $FILE_TOKENS | $FILE_LINES | $STATUS |"
+              fi
+            fi
+          done < changed_files.txt
+          
+          echo ""
+          echo "=== SUMMARY ==="
+          echo "📁 Total files analyzed: $TOTAL_FILES"
+          echo "📊 Total size: $TOTAL_SIZE bytes"
+          echo "🎯 Total estimated tokens: $TOTAL_TOKENS"
+          echo "=========================="
