@@ -527,3 +527,195 @@ func (hdp *HotDataPromotion) getRecentAccessCount(key string) int64 {
 	// In practice, you might track access counts in time windows
 	return hdp.keyAccessCount[key]
 }
+
+// AdvancedPromotionPolicy implements intelligent promotion/demotion
+type AdvancedPromotionPolicy struct {
+	*DefaultPromotionPolicy
+	
+	// Adaptive thresholds
+	accessPatterns    map[string]*AccessPattern
+	patternsMutex     sync.RWMutex
+	
+	// Machine learning inspired weights
+	recencyWeight     float64
+	frequencyWeight   float64
+	sizeWeight        float64
+}
+
+type AccessPattern struct {
+	AccessCount       int64
+	LastAccess        time.Time
+	AccessFrequency   float64 // accesses per hour
+	AccessVariance    float64 // variance in access times
+	DataSize          int64
+	mutex             sync.RWMutex
+}
+
+func NewAdvancedPromotionPolicy() *AdvancedPromotionPolicy {
+	return &AdvancedPromotionPolicy{
+		DefaultPromotionPolicy: &DefaultPromotionPolicy{
+			L1PromotionThreshold: 10,
+			L2PromotionThreshold: 5,
+			DemotionIdleTime:     time.Hour,
+		},
+		accessPatterns:  make(map[string]*AccessPattern),
+		recencyWeight:   0.4,
+		frequencyWeight: 0.4,
+		sizeWeight:      0.2,
+	}
+}
+
+func (app *AdvancedPromotionPolicy) ShouldPromote(key string, level CacheLevel, accessCount int64, lastAccess time.Time) bool {
+	app.updateAccessPattern(key, accessCount, lastAccess, 0) // size will be updated separately
+	
+	pattern := app.getAccessPattern(key)
+	if pattern == nil {
+		return app.DefaultPromotionPolicy.ShouldPromote(key, level, accessCount, lastAccess)
+	}
+	
+	pattern.mutex.RLock()
+	score := app.calculatePromotionScore(pattern, level)
+	pattern.mutex.RUnlock()
+	
+	// Dynamic thresholds based on cache level
+	threshold := 0.7
+	switch level {
+	case L3Cache:
+		threshold = 0.5 // Easier to promote from L3 to L2
+	case L2Cache:
+		threshold = 0.7 // Harder to promote from L2 to L1
+	}
+	
+	return score > threshold
+}
+
+func (app *AdvancedPromotionPolicy) ShouldDemote(key string, level CacheLevel, accessCount int64, lastAccess time.Time) bool {
+	pattern := app.getAccessPattern(key)
+	if pattern == nil {
+		return time.Since(lastAccess) > app.DemotionIdleTime
+	}
+	
+	pattern.mutex.RLock()
+	score := app.calculatePromotionScore(pattern, level)
+	pattern.mutex.RUnlock()
+	
+	// If score is very low, consider demotion
+	return score < 0.3 && time.Since(lastAccess) > app.DemotionIdleTime/2
+}
+
+func (app *AdvancedPromotionPolicy) updateAccessPattern(key string, accessCount int64, lastAccess time.Time, dataSize int64) {
+	app.patternsMutex.Lock()
+	defer app.patternsMutex.Unlock()
+	
+	pattern, exists := app.accessPatterns[key]
+	if !exists {
+		pattern = &AccessPattern{
+			AccessCount: accessCount,
+			LastAccess:  lastAccess,
+			DataSize:    dataSize,
+		}
+		app.accessPatterns[key] = pattern
+		return
+	}
+	
+	pattern.mutex.Lock()
+	defer pattern.mutex.Unlock()
+	
+	// Update access frequency (accesses per hour)
+	timeDiff := lastAccess.Sub(pattern.LastAccess).Hours()
+	if timeDiff > 0 {
+		newAccesses := accessCount - pattern.AccessCount
+		pattern.AccessFrequency = float64(newAccesses) / timeDiff
+	}
+	
+	pattern.AccessCount = accessCount
+	pattern.LastAccess = lastAccess
+	if dataSize > 0 {
+		pattern.DataSize = dataSize
+	}
+}
+
+func (app *AdvancedPromotionPolicy) getAccessPattern(key string) *AccessPattern {
+	app.patternsMutex.RLock()
+	defer app.patternsMutex.RUnlock()
+	return app.accessPatterns[key]
+}
+
+func (app *AdvancedPromotionPolicy) calculatePromotionScore(pattern *AccessPattern, level CacheLevel) float64 {
+	now := time.Now()
+	
+	// Recency score (0-1, higher is more recent)
+	timeSinceAccess := now.Sub(pattern.LastAccess).Hours()
+	recencyScore := 1.0 / (1.0 + timeSinceAccess/24.0) // Decay over days
+	
+	// Frequency score (normalized by level thresholds)
+	var maxExpectedFreq float64 = 10.0 // accesses per hour
+	frequencyScore := pattern.AccessFrequency / maxExpectedFreq
+	if frequencyScore > 1.0 {
+		frequencyScore = 1.0
+	}
+	
+	// Size score (smaller is better for higher levels)
+	sizePenalty := 0.0
+	if level == L1Cache && pattern.DataSize > 1024*1024 { // 1MB threshold for L1
+		sizePenalty = float64(pattern.DataSize) / (10 * 1024 * 1024) // 10MB max penalty
+		if sizePenalty > 1.0 {
+			sizePenalty = 1.0
+		}
+	}
+	sizeScore := 1.0 - sizePenalty
+	
+	// Weighted score
+	score := app.recencyWeight*recencyScore + 
+			 app.frequencyWeight*frequencyScore + 
+			 app.sizeWeight*sizeScore
+	
+	return score
+}
+
+// Smart cache tier with automatic balancing
+type SmartCacheTier struct {
+	CacheTier
+	loadFactor     float64
+	hitRatio       float64
+	avgResponseTime time.Duration
+	mutex          sync.RWMutex
+}
+
+func (sct *SmartCacheTier) UpdateMetrics(hitRatio float64, responseTime time.Duration) {
+	sct.mutex.Lock()
+	defer sct.mutex.Unlock()
+	
+	sct.hitRatio = hitRatio
+	sct.avgResponseTime = responseTime
+	
+	// Calculate load factor based on cache size and performance
+	if cacheWithSize, ok := sct.Cache.(interface{ Size() int64 }); ok {
+		size := cacheWithSize.Size()
+		maxSize := int64(100000) // Default max size
+		if cacheWithStats, ok := sct.Cache.(interface{ GetStats() *types.CacheStats }); ok {
+			maxSize = cacheWithStats.GetStats().MaxSize
+		}
+		sct.loadFactor = float64(size) / float64(maxSize)
+	}
+}
+
+func (sct *SmartCacheTier) GetLoadFactor() float64 {
+	sct.mutex.RLock()
+	defer sct.mutex.RUnlock()
+	return sct.loadFactor
+}
+
+func (sct *SmartCacheTier) GetHitRatio() float64 {
+	sct.mutex.RLock()
+	defer sct.mutex.RUnlock()
+	return sct.hitRatio
+}
+
+func (sct *SmartCacheTier) ShouldRebalance() bool {
+	sct.mutex.RLock()
+	defer sct.mutex.RUnlock()
+	
+	// Rebalance if load factor is too high or hit ratio is too low
+	return sct.loadFactor > 0.8 || sct.hitRatio < 0.6
+}
