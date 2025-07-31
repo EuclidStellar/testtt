@@ -185,9 +185,10 @@ jobs:
             - Use tables for structured findings like example : 
             <details>
               <summary>📂 Click to expand issue table</summary>
-            | Category | Issue Description | Location (File:Line) | Severity | Recommendation |
-            |----------|-------------------|----------------------|----------|----------------|
-            | Example  | Description here  | file.js:42           | High     | Specific fix   |
+            | Category | Issue Description | Location (Full File Path:Line) | Severity | Recommendation |
+            |----------|-------------------|--------------------------------|----------|----------------|
+            | Example  | Description here  | /complete/path/to/file.js:42   | High     | Specific fix   |
+
             </details>
             - Reference specific file locations
             - Professional tone, no emojis
@@ -216,9 +217,9 @@ jobs:
             <details>
               <summary>📂 Click to expand issue table</summary>
 
-            | Category | Issue Description | Location (File:Line) | Severity | Recommendation |
-            |----------|-------------------|----------------------|----------|----------------|
-            | Example  | Description here  | file.js:42           | High     | Specific fix   |
+            | Category | Issue Description | Location (Full File Path:Line) | Severity | Recommendation |
+            |----------|-------------------|--------------------------------|----------|----------------|
+            | Example  | Description here  | /complete/path/to/file.js:42   | High     | Specific fix   |
 
             </details>
 
@@ -237,6 +238,7 @@ jobs:
             ### Suggested Improvements
             Present corrected versions with detailed explanations:
 
+            **File:** \`/complete/path/to/problematic/file.js\`
             \`\`\`javascript  
             // Improved version
             const betterExample = "show how to fix it";
