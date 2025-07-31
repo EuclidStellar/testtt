@@ -253,6 +253,11 @@ jobs:
             ## Documentation Notes
             Documentation improvements or additions needed.
 
+            ### CRITICAL REQUIREMENTS:
+            1. ALWAYS use complete file paths in all references (not just filename)
+            2. In the Location column, use format: /full/path/to/file.ext:linenumber
+            3. For code examples, always start with "File: \`/full/path/to/file.ext\`"
+
             ---
 
             Here is the diff to review:
