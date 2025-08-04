@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -264,16 +265,14 @@ func (mc *MetricsCollector) updateSystemMetrics(ctx context.Context) {
 
 // updateMemoryUsage updates memory usage metrics
 func (mc *MetricsCollector) updateMemoryUsage() {
-	// This would typically use runtime.MemStats
-	// For now, we'll use a placeholder
-	mc.metrics.memoryUsage.Set(0) // TODO: Implement actual memory monitoring
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	mc.metrics.memoryUsage.Set(float64(m.Alloc))
 }
 
 // updateGoroutineCount updates goroutine count metrics
 func (mc *MetricsCollector) updateGoroutineCount() {
-	// This would typically use runtime.NumGoroutine()
-	// For now, we'll use a placeholder
-	mc.metrics.goroutines.Set(0) // TODO: Implement actual goroutine monitoring
+	mc.metrics.goroutines.Set(float64(runtime.NumGoroutine()))
 }
 
 // HTTPMiddleware provides HTTP metrics middleware
