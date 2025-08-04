@@ -161,7 +161,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const core = require('@actions/core');
             
             let prDiff = '';
             try {
@@ -468,4 +467,3 @@ jobs:
           if-no-files-found: warn
         continue-on-error: true
 
-  
