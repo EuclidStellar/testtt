@@ -25,8 +25,9 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          # Install build tools and jq for processing JSON
-          sudo apt-get update && sudo apt-get install -y build-essential cmake jq
+          # THE FIX IS HERE: Added 'libcurl4-openssl-dev' to the list.
+          # This provides the necessary CURL library for the -hf download feature.
+          sudo apt-get update && sudo apt-get install -y build-essential cmake jq libcurl4-openssl-dev
 
       - name: Clone and Build llama.cpp
         id: build_llama
@@ -35,7 +36,6 @@ jobs:
           git clone https://github.com/ggerganov/llama.cpp.git
           cd llama.cpp
           
-          # --- THE FIX IS HERE: Using the new CMake build system ---
           echo "--- Configuring project with CMake ---"
           mkdir build
           cd build
@@ -45,7 +45,6 @@ jobs:
           cmake --build . --config Release
 
           # The executable is now inside the build/bin directory
-          # We pass its full path to the next step.
           echo "CLI_PATH=$(pwd)/bin/llama-cli" >> $GITHUB_OUTPUT
           
       - name: Get PR Diff
