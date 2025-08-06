@@ -24,7 +24,6 @@ jobs:
           fetch-depth: 0
 
       - name: Install Ollama
-        id: install_ollama
         run: |
           echo "--- Installing Ollama ---"
           curl -fsSL https://ollama.com/install.sh | sh
@@ -39,19 +38,22 @@ jobs:
           echo "Ollama server PID: $OLLAMA_PID"
           
           echo "Waiting for Ollama service to be ready..."
-          # Wait up to 2 minutes for Ollama to start
           timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
           echo "Ollama service is ready."
 
-          echo "--- Creating Modelfile for the Hugging Face model ---"
-          # This Modelfile tells Ollama where to get the model from Hugging Face.
-          # We are using the q4_K_M quantization for a good balance of performance and size.
-          echo 'FROM bartowski/openai_gpt-oss-20b-GGUF:q4_K_M' > Modelfile
+          # --- FIX IS HERE: Download the GGUF file directly ---
+          MODEL_FILE="openai_gpt-oss-20b-q4_K_M.gguf"
+          echo "--- Downloading GGUF model file: $MODEL_FILE ---"
+          curl -L "https://huggingface.co/bartowski/openai_gpt-oss-20b-GGUF/resolve/main/$MODEL_FILE" -o "$MODEL_FILE"
           
-          echo "--- Creating local model 'code-reviewer' from Modelfile ---"
+          echo "--- Creating Modelfile to reference the local GGUF file ---"
+          # This Modelfile now points to the file we just downloaded
+          echo "FROM ./$MODEL_FILE" > Modelfile
+
+          echo "--- Creating local model 'code-reviewer' from the downloaded file ---"
           START_TIME=$(date +%s)
           ollama create code-reviewer -f Modelfile || {
-            echo "Failed to create model from Modelfile. Exiting."
+            echo "Failed to create model from local file. Exiting."
             exit 1
           }
           END_TIME=$(date +%s)
@@ -70,7 +72,6 @@ jobs:
       - name: Get PR Diff
         id: get_diff
         run: |
-          # Fetch the base branch to ensure the diff is accurate
           git fetch origin ${{ github.base_ref }}
           git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
           
@@ -86,8 +87,6 @@ jobs:
         run: |
           DIFF_CONTENT=$(cat pr_diff.txt)
           
-          # This prompt is designed to guide the LLM to act as a code reviewer.
-          # It asks for specific formatting to make the output clean and structured.
           JSON_PROMPT=$(cat <<EOF
           {
             "model": "code-reviewer",
@@ -105,7 +104,6 @@ jobs:
           cat ollama_response.json
           echo "::endgroup::"
           
-          # Extract the 'response' content from the JSON output
           jq -r '.response' ollama_response.json > final_review.md
 
       - name: Post PR Comment
