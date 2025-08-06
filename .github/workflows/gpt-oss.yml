@@ -31,7 +31,6 @@ jobs:
       - name: Install Dependencies
         run: |
           echo "--- Installing Transformers and its backends ---"
-          # We install transformers, torch, accelerate, and llama-cpp-python which transformers uses as a backend for GGUF files.
           pip install "transformers[torch]" accelerate "llama-cpp-python[server]"
 
       - name: Get PR Diff
@@ -50,8 +49,6 @@ jobs:
         if: steps.get_diff.outputs.diff_exists == 'true'
         id: run_review
         run: |
-          # Use a 'here document' to pass the Python script. The single quotes on 'EOF'
-          # prevent the shell from misinterpreting characters like $ or `.
           python - <<'EOF'
           import torch
           from transformers import pipeline
@@ -70,7 +67,6 @@ jobs:
               with open('final_review.md', 'w') as f:
                   f.write("")
           else:
-              # This prompt structure works well for text-generation pipelines
               prompt_template = """<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
               You are an expert code reviewer. Analyze the following git diff and provide a concise review. Focus on bugs, style, and improvements.
@@ -93,12 +89,13 @@ jobs:
               full_prompt = prompt_template.format(diff=diff_content)
 
               # 2. Initialize and run the pipeline
-              # The pipeline will download the model automatically.
               print("--- Initializing pipeline and loading model ---")
+              
+              # THE FIX IS HERE: The `model_kwargs` for 4-bit loading has been removed.
+              # This is correct because GGUF files are already quantized.
               pipe = pipeline(
                   "text-generation",
                   model="unsloth/gpt-oss-20b-GGUF",
-                  model_kwargs={"quantization_config": {"load_in_4bit": True}},
                   torch_dtype=torch.bfloat16,
                   device_map="auto",
               )
@@ -112,9 +109,7 @@ jobs:
                   top_p=0.9,
               )
               
-              # The output includes the prompt, so we extract only the generated part.
               review_text = outputs[0]['generated_text']
-              # The generated text starts after the assistant tag
               review_only = review_text.split("<|start_header_id|>assistant<|end_header_id|>")[1].strip()
 
               print("--- Raw output from model ---")
