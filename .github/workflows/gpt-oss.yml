@@ -1,4 +1,4 @@
-name: AI Code Review (Transformers Pipeline with Local Model)
+name: AI Code Review (llama-cli)
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   code_review_job:
-    name: Transformers Pipeline Code Review
+    name: llama.cpp CLI Code Review
     runs-on: ubuntu-latest
 
     steps:
@@ -23,44 +23,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Dependencies
+      - name: Install Build Dependencies
         run: |
-          echo "--- Installing Transformers and downloaders ---"
-          # Note: llama-cpp-python is no longer needed as we are not using GGUF files.
-          pip install "transformers[torch]" accelerate huggingface_hub hf_transfer
+          # Install build tools and jq for processing JSON
+          sudo apt-get update && sudo apt-get install -y build-essential jq
 
-      - name: Download Model using snapshot_download
-        id: download_model
+      - name: Clone and Build llama.cpp
+        id: build_llama
         run: |
-          # This step pre-downloads the model to a local directory
-          # using the accelerated hf_transfer.
-          python - <<'EOF'
-          import os
-          from huggingface_hub import snapshot_download
-
-          # Enable the accelerated downloader
-          os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-
-          local_model_path = "unsloth/gpt-oss-20b-GGUF"
-
-          print(f"--- Downloading model repo 'unsloth/gpt-oss-20b-GGUF' to ./{local_model_path} ---")
-          snapshot_download(
-              repo_id="unsloth/gpt-oss-20b-GGUF",
-              local_dir=local_model_path,
-              allow_patterns=["*.safetensors", "*.json", "*.model", "tokenizer*"], # Download only necessary files
-              local_dir_use_symlinks=False
-          )
-
-          # Pass the local path to the next step
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              print(f'MODEL_PATH={local_model_path}', file=f)
-          EOF
-
+          echo "--- Cloning llama.cpp repository ---"
+          git clone https://github.com/ggerganov/llama.cpp.git
+          cd llama.cpp
+          echo "--- Compiling llama-cli ---"
+          # The 'make' command builds the required llama-cli executable
+          make
+          # Set the executable path for the next step
+          echo "CLI_PATH=$(pwd)/llama-cli" >> $GITHUB_OUTPUT
+          
       - name: Get PR Diff
         id: get_diff
         run: |
@@ -73,73 +52,57 @@ jobs:
             echo "diff_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run AI Review with Transformers Pipeline
+      - name: Run AI Review with llama-cli
         if: steps.get_diff.outputs.diff_exists == 'true'
         id: run_review
         run: |
-          python - <<'EOF'
-          import torch
-          from transformers import pipeline
-          import os
-
-          try:
-              with open('pr_diff.txt', 'r') as f:
-                  diff_content = f.read()
-          except FileNotFoundError:
-              print("Diff file not found.")
-              diff_content = ""
-
-          if not diff_content.strip():
-              print("Diff content is empty. Skipping review.")
-              with open('final_review.md', 'w') as f:
-                  f.write("")
-          else:
-              prompt_template = """<|begin_of_text|><|start_header_id|>user<|end_header_id|>
-              You are an expert code reviewer. Analyze the following git diff and provide a concise review. Focus on bugs, style, and improvements.
-              ## Summary
-              A brief, one-sentence summary of the changes.
-              ## Findings & Suggestions
-              Use a table with columns for 'File', 'Line(s)', and 'Comment'.
-              ## Critical Issues
-              Highlight any critical issues here. If none, state 'No critical issues found.'.
-
-              Here is the git diff:
-              ```diff
-              {diff}
-              ```<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-              """
-              full_prompt = prompt_template.format(diff=diff_content)
-
-              print("--- Initializing pipeline and loading model from local path ---")
-              
-              # THE FIX IS HERE: We point the `model` to the local directory
-              # that was downloaded in the previous step.
-              pipe = pipeline(
-                  "text-generation",
-                  model="${{ steps.download_model.outputs.MODEL_PATH }}",
-                  torch_dtype=torch.bfloat16,
-                  device_map="auto",
-              )
-
-              print("--- Generating AI review ---")
-              outputs = pipe(
-                  full_prompt,
-                  max_new_tokens=2048,
-                  do_sample=True,
-                  temperature=0.6,
-                  top_p=0.9,
-              )
-              
-              review_text = outputs[0]['generated_text']
-              review_only = review_text.split("<|start_header_id|>assistant<|end_header_id|>")[1].strip()
-
-              print("--- Raw output from model ---")
-              print(review_only)
-
-              with open('final_review.md', 'w') as f:
-                  f.write(review_only)
-              print("--- Review saved to final_review.md ---")
+          CLI_PATH="${{ steps.build_llama.outputs.CLI_PATH }}"
+          
+          # 1. Create the Jinja2 prompt template file
+          cat <<'EOF' > prompt.j2
+          <|begin_of_text|><|start_header_id|>user<|end_header_id|>
+          You are an expert code reviewer. Analyze the following git diff and provide a concise review. Focus on bugs, style, and improvements.
+          
+          ## Summary
+          A brief, one-sentence summary of the changes.
+          
+          ## Findings & Suggestions
+          Use a table with columns for 'File', 'Line(s)', and 'Comment'.
+          
+          ## Critical Issues
+          Highlight any critical issues here. If none, state 'No critical issues found.'.
+          
+          Here is the git diff:
+          ```diff
+          {{ diff }}
+          ```<|eot_id|><|start_header_id|>assistant<|end_header_id|>
           EOF
+
+          # 2. Safely package the diff content into a JSON file for the template
+          DIFF_CONTENT=$(cat pr_diff.txt)
+          jq -n --arg diff "$DIFF_CONTENT" '{"diff": $diff}' > data.json
+          
+          echo "--- Generating AI review using llama-cli ---"
+          # 3. Execute llama-cli with your specified flags
+          # The -hf flag will download the model automatically.
+          # The --jinja-data-file flag safely provides the diff to the prompt template.
+          "$CLI_PATH" \
+              -hf unsloth/gpt-oss-20b-GGUF:F16 \
+              --jinja \
+              -ngl 99 \
+              --threads $(nproc) \
+              --ctx-size 16384 \
+              --temp 1.0 \
+              --top-p 1.0 \
+              --top-k 0 \
+              -f prompt.j2 \
+              --jinja-data-file data.json \
+              --no-display-prompt \
+              -n 2048 \
+              > final_review.md
+
+          echo "--- Review saved to final_review.md ---"
+          cat final_review.md
 
       - name: Post PR Comment
         if: always() && steps.get_diff.outputs.diff_exists == 'true'
@@ -155,7 +118,7 @@ jobs:
                         issue_number: context.issue.number,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b\` (via Transformers)\n\n---\n\n${reviewOutput}`
+                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b-GGUF:F16\` (via llama-cli)\n\n---\n\n${reviewOutput}`
                     });
                 } else {
                     console.log('Review file is empty. Skipping PR comment.');
