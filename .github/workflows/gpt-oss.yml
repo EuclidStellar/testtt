@@ -1,9 +1,9 @@
-name: AI Code Review (Direct GGUF)
+name: AI Code Review (Unsloth gpt-oss-20b)
 
 on:
   pull_request:
     branches:
-      - main # Or your default branch
+      - main
       - llm
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   code_review_job:
-    name: Direct GGUF Code Review
+    name: Direct GGUF Code Review with Unsloth Model
     runs-on: ubuntu-latest
 
     steps:
@@ -31,22 +31,20 @@ jobs:
       - name: Install Dependencies
         run: |
           echo "--- Installing Python libraries ---"
-          # The FIX is this more aggressive command.
-          # --upgrade: Ensures we target the latest version.
-          # --force-reinstall: Reinstalls even if a version is present.
-          # --no-cache-dir: CRITICAL - This forces pip to download the source
-          # and compile it from scratch, ensuring we have the newest C++ backend.
           pip install --upgrade --force-reinstall --no-cache-dir "llama-cpp-python[server]"
           pip install huggingface_hub
 
       - name: Download GGUF Model
         id: download_model
         run: |
-          MODEL_FILE="openai_gpt-oss-20b-Q6_K_L.gguf"
+          # --- Using the new model from Unsloth as requested ---
+          REPO_ID="unsloth/gpt-oss-20b-GGUF"
+          MODEL_FILE="gpt-oss-20b-Q4_K_M.gguf"
+
           echo "MODEL_FILE_PATH=$(pwd)/$MODEL_FILE" >> $GITHUB_OUTPUT
 
           echo "--- Downloading GGUF model file: $MODEL_FILE ---"
-          python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/openai_gpt-oss-20b-GGUF', filename='$MODEL_FILE', local_dir='.', local_dir_use_symlinks=False)"
+          python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='$REPO_ID', filename='$MODEL_FILE', local_dir='.', local_dir_use_symlinks=False)"
           
           echo "--- Verifying downloaded file ---"
           ls -lh $MODEL_FILE
@@ -143,7 +141,8 @@ jobs:
                         issue_number: context.issue.number,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
+                        // Updated model name for the comment
+                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
                     });
                 } else {
                     console.log('Review file is empty. Skipping PR comment.');
