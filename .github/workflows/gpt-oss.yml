@@ -61,13 +61,13 @@ jobs:
         if: steps.get_diff.outputs.diff_exists == 'true'
         id: run_review
         run: |
-          python - <<EOF
+          # The fix is here: using <<'EOF' tells the shell to not process
+          # the content of the script, passing it to Python literally.
+          python - <<'EOF'
           from llama_cpp import Llama
           import os
 
           # 1. Load the model
-          # n_ctx is the context window size. 4096 is a safe bet.
-          # n_gpu_layers=-1 will offload all possible layers to the GPU if available (won't happen on standard GitHub runners but is good practice).
           llm = Llama(
               model_path="${{ steps.download_model.outputs.MODEL_FILE_PATH }}",
               n_ctx=4096,
@@ -85,7 +85,6 @@ jobs:
 
           if not diff_content.strip():
               print("Diff content is empty. Skipping review.")
-              # Write an empty file to signal no comment should be posted
               with open('final_review.md', 'w') as f:
                   f.write("")
           else:
@@ -111,9 +110,9 @@ jobs:
               print("--- Generating AI review ---")
               output = llm(
                   full_prompt,
-                  max_tokens=2048,  # Max tokens for the review
-                  stop=["```"],      # Stop generation when it tries to close the code block
-                  echo=False        # Do not repeat the prompt in the output
+                  max_tokens=2048,
+                  stop=["```"],
+                  echo=False
               )
 
               review_text = output["choices"][0]["text"].strip()
@@ -132,7 +131,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            // Check if the review file exists and has content
             if (fs.existsSync('final_review.md')) {
                 const reviewOutput = fs.readFileSync('final_review.md', 'utf8').trim();
 
