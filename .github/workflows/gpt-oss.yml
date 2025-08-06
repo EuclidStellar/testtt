@@ -1,4 +1,4 @@
-name: AI Code Review with Ollama (bartowski/openai_gpt-oss-20b)
+name: AI Code Review (Direct GGUF)
 
 on:
   pull_request:
@@ -14,9 +14,8 @@ permissions:
 
 jobs:
   code_review_job:
-    name: Ollama Code Review
+    name: Direct GGUF Code Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout Repository
@@ -24,64 +23,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Ollama
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
         run: |
-          echo "--- Installing Ollama ---"
-          curl -fsSL https://ollama.com/install.sh | sh
-          echo "Ollama installation complete."
+          echo "--- Installing Python libraries ---"
+          pip install huggingface_hub "llama-cpp-python[server]>=0.2.78"
 
-      - name: Setup Ollama and Download Model
-        id: setup_ollama
+      - name: Download GGUF Model
+        id: download_model
         run: |
-          echo "--- Starting Ollama service in the background ---"
-          nohup ollama serve &> ollama_serve.log &
-          OLLAMA_PID=$!
-          echo "Ollama server PID: $OLLAMA_PID"
-
-          # --- FIX IS HERE: Redirect Ollama's storage to the local workspace ---
-          # This tells Ollama to store models here, preventing a space-consuming copy.
-          mkdir -p ./ollama_models
-          export OLLAMA_MODELS=$(pwd)/ollama_models
-          
-          echo "Waiting for Ollama service to be ready..."
-          timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
-          echo "Ollama service is ready."
-
           MODEL_FILE="openai_gpt-oss-20b-Q6_K_L.gguf"
-          
-          echo "--- Installing huggingface_hub library ---"
-          pip install huggingface_hub
+          echo "MODEL_FILE_PATH=$(pwd)/$MODEL_FILE" >> $GITHUB_OUTPUT
 
           echo "--- Downloading GGUF model file: $MODEL_FILE ---"
           python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/openai_gpt-oss-20b-GGUF', filename='$MODEL_FILE', local_dir='.', local_dir_use_symlinks=False)"
-
-          echo "--- Creating Modelfile to reference the local GGUF file ---"
-          echo "FROM ./$MODEL_FILE" > Modelfile
-
-          echo "--- Creating local model 'code-reviewer' from the downloaded file ---"
-          START_TIME=$(date +%s)
-          # Now, this command will MOVE the file instead of copying it.
-          ollama create code-reviewer -f Modelfile || {
-            echo "Failed to create model from local file. Exiting."
-            echo "Size of downloaded file:"
-            ls -lh "$MODEL_FILE"
-            exit 1
-          }
-          END_TIME=$(date +%s)
-          MODEL_SETUP_DURATION=$((END_TIME - START_TIME))
           
-          echo "::notice file=ollama_setup.log::Model creation time: ${MODEL_SETUP_DURATION} seconds"
-          echo "model_setup_duration=${MODEL_SETUP_DURATION}" >> $GITHUB_OUTPUT
-          echo "ollama_pid=$OLLAMA_PID" >> $GITHUB_OUTPUT
-
-      # ... (The rest of your workflow remains exactly the same) ...
-
-      - name: Display Measured Setup Duration
-        run: |
-          echo "------------------------------------------------------------"
-          echo "Model Setup Duration: ${{ steps.setup_ollama.outputs.model_setup_duration }} seconds"
-          echo "------------------------------------------------------------"
-
+          echo "--- Verifying downloaded file ---"
+          ls -lh $MODEL_FILE
+      
       - name: Get PR Diff
         id: get_diff
         run: |
@@ -94,30 +57,74 @@ jobs:
             echo "diff_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Review PR with Ollama
-        id: review_with_ollama
+      - name: Run AI Review with Python Script
         if: steps.get_diff.outputs.diff_exists == 'true'
+        id: run_review
         run: |
-          DIFF_CONTENT=$(cat pr_diff.txt)
-          
-          JSON_PROMPT=$(cat <<EOF
-          {
-            "model": "code-reviewer",
-            "stream": false,
-            "prompt": "You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:\n\n## Summary\nA brief, one-sentence summary of the changes.\n\n## Findings & Suggestions\nUse a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.\n\n## Critical Issues\nHighlight any critical issues or major concerns here. If none, state 'No critical issues found.'.\n\nHere is the git diff:\n\`\`\`diff\n$DIFF_CONTENT\n\`\`\`"
-          }
-          EOF
+          python - <<EOF
+          from llama_cpp import Llama
+          import os
+
+          # 1. Load the model
+          # n_ctx is the context window size. 4096 is a safe bet.
+          # n_gpu_layers=-1 will offload all possible layers to the GPU if available (won't happen on standard GitHub runners but is good practice).
+          llm = Llama(
+              model_path="${{ steps.download_model.outputs.MODEL_FILE_PATH }}",
+              n_ctx=4096,
+              n_gpu_layers=-1,
+              verbose=True
           )
 
-          echo "--- Sending diff to Ollama for review ---"
-          curl http://localhost:11434/api/generate -d "$JSON_PROMPT" > ollama_response.json
-          
-          echo "--- Ollama Review Result ---"
-          echo "::group::Ollama Raw JSON Response"
-          cat ollama_response.json
-          echo "::endgroup::"
-          
-          jq -r '.response' ollama_response.json > final_review.md
+          # 2. Prepare the prompt
+          try:
+              with open('pr_diff.txt', 'r') as f:
+                  diff_content = f.read()
+          except FileNotFoundError:
+              print("Diff file not found.")
+              diff_content = ""
+
+          if not diff_content.strip():
+              print("Diff content is empty. Skipping review.")
+              # Write an empty file to signal no comment should be posted
+              with open('final_review.md', 'w') as f:
+                  f.write("")
+          else:
+              prompt_template = """You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:
+
+              ## Summary
+              A brief, one-sentence summary of the changes.
+
+              ## Findings & Suggestions
+              Use a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.
+
+              ## Critical Issues
+              Highlight any critical issues or major concerns here. If none, state 'No critical issues found.'.
+
+              Here is the git diff:
+              ```diff
+              {diff}
+              ```"""
+              
+              full_prompt = prompt_template.format(diff=diff_content)
+
+              # 3. Run inference
+              print("--- Generating AI review ---")
+              output = llm(
+                  full_prompt,
+                  max_tokens=2048,  # Max tokens for the review
+                  stop=["```"],      # Stop generation when it tries to close the code block
+                  echo=False        # Do not repeat the prompt in the output
+              )
+
+              review_text = output["choices"][0]["text"].strip()
+              print("--- Raw output from model ---")
+              print(review_text)
+
+              # 4. Save the output
+              with open('final_review.md', 'w') as f:
+                  f.write(review_text)
+              print("--- Review saved to final_review.md ---")
+          EOF
 
       - name: Post PR Comment
         if: always() && steps.get_diff.outputs.diff_exists == 'true'
@@ -125,32 +132,20 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const reviewOutput = fs.readFileSync('final_review.md', 'utf8');
+            // Check if the review file exists and has content
+            if (fs.existsSync('final_review.md')) {
+                const reviewOutput = fs.readFileSync('final_review.md', 'utf8').trim();
 
-            if (reviewOutput && reviewOutput.trim() !== "" && reviewOutput.trim().toLowerCase() !== "null") {
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
-              });
+                if (reviewOutput) {
+                    github.rest.issues.createComment({
+                        issue_number: context.issue.number,
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
+                    });
+                } else {
+                    console.log('Review file is empty. Skipping PR comment.');
+                }
             } else {
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\nNo review comments were generated, or the diff was empty.`
-              });
+                console.log('Review file not found. Skipping PR comment.');
             }
-
-      - name: Stop Ollama Service (Cleanup)
-        if: always()
-        run: |
-          echo "--- Stopping Ollama service ---"
-          OLLAMA_PID="${{ steps.setup_ollama.outputs.ollama_pid }}"
-          if [ -n "$OLLAMA_PID" ] && ps -p "$OLLAMA_PID" > /dev/null; then
-            kill "$OLLAMA_PID"
-            echo "Ollama service with PID $OLLAMA_PID stopped."
-          else
-            echo "Ollama service not running or already stopped."
-          fi
