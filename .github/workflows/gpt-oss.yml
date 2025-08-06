@@ -3,6 +3,7 @@ name: AI Code Review with Ollama (bartowski/openai_gpt-oss-20b)
 on:
   pull_request:
     branches:
+      - main # Or your default branch
       - llm
   workflow_dispatch:
 
@@ -41,8 +42,8 @@ jobs:
           timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
           echo "Ollama service is ready."
 
-          # --- FIX IS HERE: Updated the filename to the one you provided ---
-          **MODEL_FILE="openai_gpt-oss-20b-Q6_K_L.gguf"**
+          # This is the corrected line without any formatting characters.
+          MODEL_FILE="openai_gpt-oss-20b-Q6_K_L.gguf"
           
           echo "--- Installing huggingface_hub library ---"
           pip install huggingface_hub
