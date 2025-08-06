@@ -1,4 +1,4 @@
-name: AI Code Review (Unsloth gpt-oss-20b)
+name: AI Code Review (Transformers Pipeline)
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   code_review_job:
-    name: Direct GGUF Code Review with Unsloth Model
+    name: Transformers Pipeline Code Review
     runs-on: ubuntu-latest
 
     steps:
@@ -30,25 +30,10 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          echo "--- Installing Python libraries ---"
-          pip install --upgrade --force-reinstall --no-cache-dir "llama-cpp-python[server]"
-          pip install huggingface_hub
+          echo "--- Installing Transformers and its backends ---"
+          # We install transformers, torch, accelerate, and llama-cpp-python which transformers uses as a backend for GGUF files.
+          pip install "transformers[torch]" accelerate "llama-cpp-python[server]"
 
-      - name: Download GGUF Model
-        id: download_model
-        run: |
-          # --- Using the new model from Unsloth as requested ---
-          REPO_ID="unsloth/gpt-oss-20b-GGUF"
-          MODEL_FILE="gpt-oss-20b-Q4_K_M.gguf"
-
-          echo "MODEL_FILE_PATH=$(pwd)/$MODEL_FILE" >> $GITHUB_OUTPUT
-
-          echo "--- Downloading GGUF model file: $MODEL_FILE ---"
-          python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='$REPO_ID', filename='$MODEL_FILE', local_dir='.', local_dir_use_symlinks=False)"
-          
-          echo "--- Verifying downloaded file ---"
-          ls -lh $MODEL_FILE
-      
       - name: Get PR Diff
         id: get_diff
         run: |
@@ -61,23 +46,18 @@ jobs:
             echo "diff_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run AI Review with Python Script
+      - name: Run AI Review with Transformers Pipeline
         if: steps.get_diff.outputs.diff_exists == 'true'
         id: run_review
         run: |
+          # Use a 'here document' to pass the Python script. The single quotes on 'EOF'
+          # prevent the shell from misinterpreting characters like $ or `.
           python - <<'EOF'
-          from llama_cpp import Llama
+          import torch
+          from transformers import pipeline
           import os
 
-          # 1. Load the model
-          llm = Llama(
-              model_path="${{ steps.download_model.outputs.MODEL_FILE_PATH }}",
-              n_ctx=4096,
-              n_gpu_layers=-1,
-              verbose=True
-          )
-
-          # 2. Prepare the prompt
+          # 1. Prepare the prompt
           try:
               with open('pr_diff.txt', 'r') as f:
                   diff_content = f.read()
@@ -90,40 +70,59 @@ jobs:
               with open('final_review.md', 'w') as f:
                   f.write("")
           else:
-              prompt_template = """You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:
+              # This prompt structure works well for text-generation pipelines
+              prompt_template = """<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+              You are an expert code reviewer. Analyze the following git diff and provide a concise review. Focus on bugs, style, and improvements.
 
               ## Summary
               A brief, one-sentence summary of the changes.
 
               ## Findings & Suggestions
-              Use a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.
+              Use a table with columns for 'File', 'Line(s)', and 'Comment'.
 
               ## Critical Issues
-              Highlight any critical issues or major concerns here. If none, state 'No critical issues found.'.
+              Highlight any critical issues here. If none, state 'No critical issues found.'.
 
               Here is the git diff:
               ```diff
               {diff}
-              ```"""
+              ```<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+              """
               
               full_prompt = prompt_template.format(diff=diff_content)
 
-              # 3. Run inference
-              print("--- Generating AI review ---")
-              output = llm(
-                  full_prompt,
-                  max_tokens=2048,
-                  stop=["```"],
-                  echo=False
+              # 2. Initialize and run the pipeline
+              # The pipeline will download the model automatically.
+              print("--- Initializing pipeline and loading model ---")
+              pipe = pipeline(
+                  "text-generation",
+                  model="unsloth/gpt-oss-20b-GGUF",
+                  model_kwargs={"quantization_config": {"load_in_4bit": True}},
+                  torch_dtype=torch.bfloat16,
+                  device_map="auto",
               )
 
-              review_text = output["choices"][0]["text"].strip()
-              print("--- Raw output from model ---")
-              print(review_text)
+              print("--- Generating AI review ---")
+              outputs = pipe(
+                  full_prompt,
+                  max_new_tokens=2048,
+                  do_sample=True,
+                  temperature=0.6,
+                  top_p=0.9,
+              )
+              
+              # The output includes the prompt, so we extract only the generated part.
+              review_text = outputs[0]['generated_text']
+              # The generated text starts after the assistant tag
+              review_only = review_text.split("<|start_header_id|>assistant<|end_header_id|>")[1].strip()
 
-              # 4. Save the output
+              print("--- Raw output from model ---")
+              print(review_only)
+
+              # 3. Save the output
               with open('final_review.md', 'w') as f:
-                  f.write(review_text)
+                  f.write(review_only)
               print("--- Review saved to final_review.md ---")
           EOF
 
@@ -141,8 +140,7 @@ jobs:
                         issue_number: context.issue.number,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        // Updated model name for the comment
-                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
+                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b-GGUF\` (via Transformers)\n\n---\n\n${reviewOutput}`
                     });
                 } else {
                     console.log('Review file is empty. Skipping PR comment.');
