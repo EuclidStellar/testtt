@@ -1,0 +1,145 @@
+name: AI Code Review with Ollama (bartowski/openai_gpt-oss-20b)
+
+on:
+  pull_request:
+    branches:
+      - llm
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  code_review_job:
+    name: Ollama Code Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Ollama
+        id: install_ollama
+        run: |
+          echo "--- Installing Ollama ---"
+          curl -fsSL https://ollama.com/install.sh | sh
+          echo "Ollama installation complete."
+
+      - name: Setup Ollama and Create Model
+        id: setup_ollama
+        run: |
+          echo "--- Starting Ollama service in the background ---"
+          nohup ollama serve &> ollama_serve.log &
+          OLLAMA_PID=$!
+          echo "Ollama server PID: $OLLAMA_PID"
+          
+          echo "Waiting for Ollama service to be ready..."
+          # Wait up to 2 minutes for Ollama to start
+          timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
+          echo "Ollama service is ready."
+
+          echo "--- Creating Modelfile for the Hugging Face model ---"
+          # This Modelfile tells Ollama where to get the model from Hugging Face.
+          # We are using the q4_K_M quantization for a good balance of performance and size.
+          echo 'FROM bartowski/openai_gpt-oss-20b-GGUF:q4_K_M' > Modelfile
+          
+          echo "--- Creating local model 'code-reviewer' from Modelfile ---"
+          START_TIME=$(date +%s)
+          ollama create code-reviewer -f Modelfile || {
+            echo "Failed to create model from Modelfile. Exiting."
+            exit 1
+          }
+          END_TIME=$(date +%s)
+          MODEL_SETUP_DURATION=$((END_TIME - START_TIME))
+          
+          echo "::notice file=ollama_setup.log::Model creation time: ${MODEL_SETUP_DURATION} seconds"
+          echo "model_setup_duration=${MODEL_SETUP_DURATION}" >> $GITHUB_OUTPUT
+          echo "ollama_pid=$OLLAMA_PID" >> $GITHUB_OUTPUT
+
+      - name: Display Measured Setup Duration
+        run: |
+          echo "------------------------------------------------------------"
+          echo "Model Setup Duration: ${{ steps.setup_ollama.outputs.model_setup_duration }} seconds"
+          echo "------------------------------------------------------------"
+
+      - name: Get PR Diff
+        id: get_diff
+        run: |
+          # Fetch the base branch to ensure the diff is accurate
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          
+          if [ -s "pr_diff.txt" ]; then
+            echo "diff_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "diff_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Review PR with Ollama
+        id: review_with_ollama
+        if: steps.get_diff.outputs.diff_exists == 'true'
+        run: |
+          DIFF_CONTENT=$(cat pr_diff.txt)
+          
+          # This prompt is designed to guide the LLM to act as a code reviewer.
+          # It asks for specific formatting to make the output clean and structured.
+          JSON_PROMPT=$(cat <<EOF
+          {
+            "model": "code-reviewer",
+            "stream": false,
+            "prompt": "You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:\n\n## Summary\nA brief, one-sentence summary of the changes.\n\n## Findings & Suggestions\nUse a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.\n\n## Critical Issues\nHighlight any critical issues or major concerns here. If none, state 'No critical issues found.'.\n\nHere is the git diff:\n\`\`\`diff\n$DIFF_CONTENT\n\`\`\`"
+          }
+            EOF
+          )
+
+          echo "--- Sending diff to Ollama for review ---"
+          curl http://localhost:11434/api/generate -d "$JSON_PROMPT" > ollama_response.json
+          
+          echo "--- Ollama Review Result ---"
+          echo "::group::Ollama Raw JSON Response"
+          cat ollama_response.json
+          echo "::endgroup::"
+          
+          # Extract the 'response' content from the JSON output
+          jq -r '.response' ollama_response.json > final_review.md
+
+      - name: Post PR Comment
+        if: always() && steps.get_diff.outputs.diff_exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reviewOutput = fs.readFileSync('final_review.md', 'utf8');
+
+            if (reviewOutput && reviewOutput.trim() !== "" && reviewOutput.trim().toLowerCase() !== "null") {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\n${reviewOutput}`
+              });
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🤖 AI Code Review\n\n**Model:** \`bartowski/openai_gpt-oss-20b-GGUF\`\n\n---\n\nNo review comments were generated, or the diff was empty.`
+              });
+            }
+
+      - name: Stop Ollama Service (Cleanup)
+        if: always()
+        run: |
+          echo "--- Stopping Ollama service ---"
+          OLLAMA_PID="${{ steps.setup_ollama.outputs.ollama_pid }}"
+          if [ -n "$OLLAMA_PID" ] && ps -p "$OLLAMA_PID" > /dev/null; then
+            kill "$OLLAMA_PID"
+            echo "Ollama service with PID $OLLAMA_PID stopped."
+          else
+            echo "Ollama service not running or already stopped."
+          fi

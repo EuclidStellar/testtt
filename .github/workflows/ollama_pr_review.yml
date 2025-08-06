@@ -3,7 +3,7 @@ name: Ollama Model Setup and PR Review
 on:
   pull_request:
     branches:
-      - llm
+      - llmmm
   workflow_dispatch:
 
 permissions:
