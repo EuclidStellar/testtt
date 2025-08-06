@@ -37,12 +37,16 @@ jobs:
           nohup ollama serve &> ollama_serve.log &
           OLLAMA_PID=$!
           echo "Ollama server PID: $OLLAMA_PID"
+
+          # --- FIX IS HERE: Redirect Ollama's storage to the local workspace ---
+          # This tells Ollama to store models here, preventing a space-consuming copy.
+          mkdir -p ./ollama_models
+          export OLLAMA_MODELS=$(pwd)/ollama_models
           
           echo "Waiting for Ollama service to be ready..."
           timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
           echo "Ollama service is ready."
 
-          # This is the corrected line without any formatting characters.
           MODEL_FILE="openai_gpt-oss-20b-Q6_K_L.gguf"
           
           echo "--- Installing huggingface_hub library ---"
@@ -56,6 +60,7 @@ jobs:
 
           echo "--- Creating local model 'code-reviewer' from the downloaded file ---"
           START_TIME=$(date +%s)
+          # Now, this command will MOVE the file instead of copying it.
           ollama create code-reviewer -f Modelfile || {
             echo "Failed to create model from local file. Exiting."
             echo "Size of downloaded file:"
@@ -68,6 +73,8 @@ jobs:
           echo "::notice file=ollama_setup.log::Model creation time: ${MODEL_SETUP_DURATION} seconds"
           echo "model_setup_duration=${MODEL_SETUP_DURATION}" >> $GITHUB_OUTPUT
           echo "ollama_pid=$OLLAMA_PID" >> $GITHUB_OUTPUT
+
+      # ... (The rest of your workflow remains exactly the same) ...
 
       - name: Display Measured Setup Duration
         run: |
@@ -99,7 +106,7 @@ jobs:
             "stream": false,
             "prompt": "You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:\n\n## Summary\nA brief, one-sentence summary of the changes.\n\n## Findings & Suggestions\nUse a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.\n\n## Critical Issues\nHighlight any critical issues or major concerns here. If none, state 'No critical issues found.'.\n\nHere is the git diff:\n\`\`\`diff\n$DIFF_CONTENT\n\`\`\`"
           }
-            EOF
+          EOF
           )
 
           echo "--- Sending diff to Ollama for review ---"
