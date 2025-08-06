@@ -1,4 +1,4 @@
-name: AI Code Review (Transformers Pipeline)
+name: AI Code Review (Transformers Pipeline with Local Model)
 
 on:
   pull_request:
@@ -30,8 +30,36 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          echo "--- Installing Transformers and its backends ---"
-          pip install "transformers[torch]" accelerate "llama-cpp-python[server]"
+          echo "--- Installing Transformers and downloaders ---"
+          # Note: llama-cpp-python is no longer needed as we are not using GGUF files.
+          pip install "transformers[torch]" accelerate huggingface_hub hf_transfer
+
+      - name: Download Model using snapshot_download
+        id: download_model
+        run: |
+          # This step pre-downloads the model to a local directory
+          # using the accelerated hf_transfer.
+          python - <<'EOF'
+          import os
+          from huggingface_hub import snapshot_download
+
+          # Enable the accelerated downloader
+          os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+          local_model_path = "unsloth/gpt-oss-20b-GGUF"
+
+          print(f"--- Downloading model repo 'unsloth/gpt-oss-20b-GGUF' to ./{local_model_path} ---")
+          snapshot_download(
+              repo_id="unsloth/gpt-oss-20b-GGUF",
+              local_dir=local_model_path,
+              allow_patterns=["*.safetensors", "*.json", "*.model", "tokenizer*"], # Download only necessary files
+              local_dir_use_symlinks=False
+          )
+
+          # Pass the local path to the next step
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              print(f'MODEL_PATH={local_model_path}', file=f)
+          EOF
 
       - name: Get PR Diff
         id: get_diff
@@ -54,7 +82,6 @@ jobs:
           from transformers import pipeline
           import os
 
-          # 1. Prepare the prompt
           try:
               with open('pr_diff.txt', 'r') as f:
                   diff_content = f.read()
@@ -68,15 +95,11 @@ jobs:
                   f.write("")
           else:
               prompt_template = """<|begin_of_text|><|start_header_id|>user<|end_header_id|>
-
               You are an expert code reviewer. Analyze the following git diff and provide a concise review. Focus on bugs, style, and improvements.
-
               ## Summary
               A brief, one-sentence summary of the changes.
-
               ## Findings & Suggestions
               Use a table with columns for 'File', 'Line(s)', and 'Comment'.
-
               ## Critical Issues
               Highlight any critical issues here. If none, state 'No critical issues found.'.
 
@@ -85,17 +108,15 @@ jobs:
               {diff}
               ```<|eot_id|><|start_header_id|>assistant<|end_header_id|>
               """
-              
               full_prompt = prompt_template.format(diff=diff_content)
 
-              # 2. Initialize and run the pipeline
-              print("--- Initializing pipeline and loading model ---")
+              print("--- Initializing pipeline and loading model from local path ---")
               
-              # THE FIX IS HERE: The `model_kwargs` for 4-bit loading has been removed.
-              # This is correct because GGUF files are already quantized.
+              # THE FIX IS HERE: We point the `model` to the local directory
+              # that was downloaded in the previous step.
               pipe = pipeline(
                   "text-generation",
-                  model="unsloth/gpt-oss-20b-GGUF",
+                  model="${{ steps.download_model.outputs.MODEL_PATH }}",
                   torch_dtype=torch.bfloat16,
                   device_map="auto",
               )
@@ -115,7 +136,6 @@ jobs:
               print("--- Raw output from model ---")
               print(review_only)
 
-              # 3. Save the output
               with open('final_review.md', 'w') as f:
                   f.write(review_only)
               print("--- Review saved to final_review.md ---")
@@ -135,7 +155,7 @@ jobs:
                         issue_number: context.issue.number,
                         owner: context.repo.owner,
                         repo: context.repo.repo,
-                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b-GGUF\` (via Transformers)\n\n---\n\n${reviewOutput}`
+                        body: `## 🤖 AI Code Review\n\n**Model:** \`unsloth/gpt-oss-20b\` (via Transformers)\n\n---\n\n${reviewOutput}`
                     });
                 } else {
                     console.log('Review file is empty. Skipping PR comment.');
