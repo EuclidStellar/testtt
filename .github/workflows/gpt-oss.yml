@@ -31,7 +31,10 @@ jobs:
       - name: Install Dependencies
         run: |
           echo "--- Installing Python libraries ---"
-          pip install huggingface_hub "llama-cpp-python[server]>=0.2.78"
+          # This command forces pip to upgrade and reinstall the latest version
+          # of the library, ignoring any old cached copies. This is the fix.
+          pip install --upgrade --force-reinstall --no-cache-dir "llama-cpp-python[server]"
+          pip install huggingface_hub
 
       - name: Download GGUF Model
         id: download_model
@@ -61,8 +64,6 @@ jobs:
         if: steps.get_diff.outputs.diff_exists == 'true'
         id: run_review
         run: |
-          # The fix is here: using <<'EOF' tells the shell to not process
-          # the content of the script, passing it to Python literally.
           python - <<'EOF'
           from llama_cpp import Llama
           import os
