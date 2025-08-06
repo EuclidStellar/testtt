@@ -29,7 +29,7 @@ jobs:
           curl -fsSL https://ollama.com/install.sh | sh
           echo "Ollama installation complete."
 
-      - name: Setup Ollama and Create Model
+      - name: Setup Ollama and Download Model
         id: setup_ollama
         run: |
           echo "--- Starting Ollama service in the background ---"
@@ -41,19 +41,24 @@ jobs:
           timeout 120s bash -c 'until curl http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done'
           echo "Ollama service is ready."
 
-          # --- FIX IS HERE: Download the GGUF file directly ---
+          # --- FIX IS HERE: Use the official Hugging Face library to download ---
           MODEL_FILE="openai_gpt-oss-20b-q4_K_M.gguf"
-          echo "--- Downloading GGUF model file: $MODEL_FILE ---"
-          curl -L "https://huggingface.co/bartowski/openai_gpt-oss-20b-GGUF/resolve/main/$MODEL_FILE" -o "$MODEL_FILE"
-          
+          echo "--- Installing huggingface_hub library ---"
+          pip install huggingface_hub
+
+          echo "--- Downloading GGUF model file using huggingface_hub ---"
+          python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/openai_gpt-oss-20b-GGUF', filename='$MODEL_FILE', local_dir='.', local_dir_use_symlinks=False)"
+
           echo "--- Creating Modelfile to reference the local GGUF file ---"
-          # This Modelfile now points to the file we just downloaded
           echo "FROM ./$MODEL_FILE" > Modelfile
 
           echo "--- Creating local model 'code-reviewer' from the downloaded file ---"
           START_TIME=$(date +%s)
           ollama create code-reviewer -f Modelfile || {
             echo "Failed to create model from local file. Exiting."
+            # Add this line to see the size of the downloaded file for debugging
+            echo "Size of downloaded file:"
+            ls -lh "$MODEL_FILE"
             exit 1
           }
           END_TIME=$(date +%s)
@@ -93,7 +98,7 @@ jobs:
             "stream": false,
             "prompt": "You are an expert code reviewer for a GitHub pull request. Your task is to analyze the following code changes and provide a concise, helpful review. Focus on identifying potential bugs, style issues, security vulnerabilities, and areas for improvement. Do not repeat the code from the diff in your answer. Structure your response in Markdown with the following sections:\n\n## Summary\nA brief, one-sentence summary of the changes.\n\n## Findings & Suggestions\nUse a table with columns for 'File', 'Line(s)', and 'Comment' to list your findings. If a finding is not specific to a line, use 'N/A'.\n\n## Critical Issues\nHighlight any critical issues or major concerns here. If none, state 'No critical issues found.'.\n\nHere is the git diff:\n\`\`\`diff\n$DIFF_CONTENT\n\`\`\`"
           }
-            EOF
+           EOF
           )
 
           echo "--- Sending diff to Ollama for review ---"
