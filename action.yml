@@ -17,7 +17,7 @@ inputs:
   ollama-model:
     description: 'The Ollama model to use as a fallback if the primary model fails.'
     required: false
-    default: 'qwen2:7b'
+    default: 'gemma3n:e4b'
   use-ollama-fallback:
     description: 'Enable the Ollama fallback system.'
     required: false
@@ -47,4 +47,4 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'docker://ghcr.io/euclidstellar/code-review-agent:v1'
+  image: 'Dockerfile'
