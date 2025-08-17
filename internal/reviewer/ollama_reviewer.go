@@ -33,7 +33,7 @@ func NewOllamaClient(model string) *OllamaClient {
         baseURL: "http://localhost:11434",
         httpClient: &http.Client{
             // FIX: Increase timeout from 5 minutes to 15 minutes
-            Timeout: 1200 * time.Second, // 15 minutes for large models on slow runners
+            Timeout: 4000 * time.Second, // 15 minutes for large models on slow runners
         },
         model: model,
     }
