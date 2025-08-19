@@ -90,27 +90,29 @@ func generateReview(ctx context.Context, cfg *config.Config, diff string, ghClie
 	}
 	logger.Error("GitHub Models failed: %v", err)
 
+	var reviewPrefix string
 	// Check if it's a token limit error
 	if errors.Is(err, config.ErrTokenLimitExceeded) {
-		// Post the friendly "coffee" message
-		coffeeMessage := "Hey, it looks like your PR diff is very big, but don't worry, we got you! Grab a coffee, and before you finish it, your PR review will be ready. ☕"
-		if postErr := ghClient.PostComment(ctx, cfg.PRNumber, coffeeMessage); postErr != nil {
-			logger.Error("Failed to post 'coffee' comment: %v", postErr)
-		}
+		// Prepare the friendly "coffee" message to be prepended to the fallback review.
+		// We no longer post this as a separate comment.
+		reviewPrefix = "Hey, it looks like your PR diff is very big, but don't worry, we got you! Grab a coffee, and before you finish it, your PR review will be ready. ☕\n\n"
 	}
 
 	// Attempt 2: Ollama Fallback
 	if cfg.UseOllamaFallback {
 		logger.Info("🔄 Attempting review with Ollama fallback (%s)...", cfg.OllamaModel)
-		ollamaReview, err := tryOllamaFallback(ctx, cfg, diff, logger)
-		if err == nil {
-			return ollamaReview, "ollama", nil
+		ollamaReview, ollamaErr := tryOllamaFallback(ctx, cfg, diff, logger)
+		if ollamaErr == nil {
+			// Prepend the coffee message if it exists and return the combined review.
+			return reviewPrefix + ollamaReview, "ollama", nil
 		}
-		logger.Error("Ollama fallback also failed: %v", err)
-		return "", "", err // Return the last error
+		// If Ollama fails, log its specific error and return it.
+		logger.Error("Ollama fallback also failed: %v", ollamaErr)
+		return "", "", ollamaErr
 	}
 
-	return "", "", err // Return the original error if Ollama is disabled
+	// If Ollama fallback is disabled, return the original error from GitHub Models.
+	return "", "", err
 }
 
 func tryGitHubModels(cfg *config.Config, diff string, logger *utils.Logger) (string, error) {
