@@ -45,7 +45,7 @@ func NewGitHubModelsClient(token string) *GitHubModelsClient {
 func (c *GitHubModelsClient) GenerateReview(diff, model string, temperature float64, maxTokens int) (string, error) {
 
     // for testing with token limit exceed :
-    return "", ErrTokenLimitExceeded
+    //return "", ErrTokenLimitExceeded
     prompt := c.buildPrompt(diff)
     
     request := ChatRequest{
