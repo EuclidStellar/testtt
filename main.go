@@ -15,6 +15,9 @@ import (
 	"github.com/euclidstellar/code-review-agent/internal/utils"
 )
 
+// errOllamaFailedAfterNotice is a special error to indicate that the coffee message was posted, but Ollama failed.
+var errOllamaFailedAfterNotice = errors.New("ollama review failed after token limit notice was posted")
+
 func main() {
 	logger := utils.NewLogger()
 	if err := run(logger); err != nil {
@@ -65,19 +68,30 @@ func run(logger *utils.Logger) error {
 	// --- Review Logic ---
 	review, provider, err := generateReview(ctx, cfg, prioritizedDiff, ghClient, logger)
 	if err != nil {
+		// If the special error is returned, it means the coffee message was already posted.
+		// We should not post another generic error message.
+		if errors.Is(err, errOllamaFailedAfterNotice) {
+			logger.Error("Ollama fallback failed after posting the token limit notice. No further comment will be posted.")
+			return err
+		}
 		logger.Error("All review providers failed. Posting static fallback. Final error: %v", err)
 		review = generateFallbackReview(prioritizedDiff, err.Error())
 		provider = "static-fallback"
 	}
 
-	// Post the final review comment
-	if err := ghClient.PostComment(ctx, cfg.PRNumber, review); err != nil {
-		return fmt.Errorf("failed to post final comment: %w", err)
+	// Post the final review comment, but only if there's content to post.
+	if review != "" {
+		if err := ghClient.PostComment(ctx, cfg.PRNumber, review); err != nil {
+			return fmt.Errorf("failed to post final comment: %w", err)
+		}
+		logger.Info("Posted review using provider: %s", provider)
+		logger.GitHubOutput("review-posted", "true")
+		logger.GitHubOutput("review-provider", provider)
+	} else {
+		logger.Info("No final review content to post.")
+		logger.GitHubOutput("review-posted", "false")
 	}
 
-	logger.Info("Posted review using provider: %s", provider)
-	logger.GitHubOutput("review-posted", "true")
-	logger.GitHubOutput("review-provider", provider)
 	return nil
 }
 
@@ -90,12 +104,15 @@ func generateReview(ctx context.Context, cfg *config.Config, diff string, ghClie
 	}
 	logger.Error("GitHub Models failed: %v", err)
 
-	var reviewPrefix string
 	// Check if it's a token limit error
 	if errors.Is(err, config.ErrTokenLimitExceeded) {
-		// Prepare the friendly "coffee" message to be prepended to the fallback review.
-		// We no longer post this as a separate comment.
-		reviewPrefix = "Hey, it looks like your PR diff is very big, but don't worry, we got you! Grab a coffee, and before you finish it, your PR review will be ready. ☕\n\n"
+		// Post the "coffee" message immediately to notify the user.
+		coffeeMessage := "Hey, it looks like your PR diff is very big, but don't worry, we got you! Grab a coffee, and before you finish it, your PR review will be ready. ☕"
+		if postErr := ghClient.PostComment(ctx, cfg.PRNumber, coffeeMessage); postErr != nil {
+			// If we can't even post the notice, return the original error.
+			return "", "", fmt.Errorf("failed to post token limit notice: %w", postErr)
+		}
+		logger.Info("✅ Posted token limit 'coffee' message.")
 	}
 
 	// Attempt 2: Ollama Fallback
@@ -103,15 +120,19 @@ func generateReview(ctx context.Context, cfg *config.Config, diff string, ghClie
 		logger.Info("🔄 Attempting review with Ollama fallback (%s)...", cfg.OllamaModel)
 		ollamaReview, ollamaErr := tryOllamaFallback(ctx, cfg, diff, logger)
 		if ollamaErr == nil {
-			// Prepend the coffee message if it exists and return the combined review.
-			return reviewPrefix + ollamaReview, "ollama", nil
+			// Success: return the Ollama review content to be posted by run().
+			return ollamaReview, "ollama", nil
 		}
-		// If Ollama fails, log its specific error and return it.
+		// If Ollama fails, log its specific error.
 		logger.Error("Ollama fallback also failed: %v", ollamaErr)
+		// If we already posted the coffee message, return the special error.
+		if errors.Is(err, config.ErrTokenLimitExceeded) {
+			return "", "", errOllamaFailedAfterNotice
+		}
 		return "", "", ollamaErr
 	}
 
-	// If Ollama fallback is disabled, return the original error from GitHub Models.
+	// If Ollama fallback is disabled or failed without a prior coffee message, return the original error.
 	return "", "", err
 }
 
