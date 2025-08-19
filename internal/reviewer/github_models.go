@@ -42,6 +42,8 @@ func NewGitHubModelsClient(token string) *GitHubModelsClient {
 }
 
 func (c *GitHubModelsClient) GenerateReview(diff, model string, temperature float64, maxTokens int) (string, error) {
+
+    return "" , config.ErrTokenLimitExceeded
     prompt := BuildReviewPrompt(diff)
     
     request := ChatRequest{
