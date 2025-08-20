@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,7 +17,7 @@ import (
 
 const (
 	MultiReviewMinTokens = 12000
-	MultiReviewMaxTokens = math.MaxInt32 // No upper limit for chunking
+	MultiReviewMaxTokens = 18000
 	ChunkTargetTokens    = 6200
 )
 
