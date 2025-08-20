@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,8 +16,11 @@ import (
 	"github.com/euclidstellar/code-review-agent/internal/utils"
 )
 
-// errOllamaFailedAfterNotice is a special error to indicate that the coffee message was posted, but Ollama failed.
-var errOllamaFailedAfterNotice = errors.New("ollama review failed after token limit notice was posted")
+const (
+	MultiReviewMinTokens = 12000
+	MultiReviewMaxTokens = math.MaxInt32 // No upper limit for chunking
+	ChunkTargetTokens    = 6200
+)
 
 func main() {
 	logger := utils.NewLogger()
@@ -58,6 +62,16 @@ func run(logger *utils.Logger) error {
 		return nil
 	}
 
+	estimatedTokens := len(prDiff) / 4
+	logger.Info("Estimated total diff tokens: ~%d", estimatedTokens)
+
+	// New logic for large PRs that can be chunked
+	if estimatedTokens >= MultiReviewMinTokens && estimatedTokens <= MultiReviewMaxTokens {
+		logger.Info("Large PR detected. Splitting into multiple reviews.")
+		return handleMultiReview(ctx, cfg, ghClient, diffAnalyzer, logger)
+	}
+
+	// --- Existing Review Logic ---
 	logger.Info("Analyzing diff (original size: %d bytes)", len(prDiff))
 	prioritizedDiff, err := diffAnalyzer.AnalyzeAndPrioritize(prDiff, cfg.BaseRef, cfg.HeadRef)
 	if err != nil {
@@ -65,34 +79,87 @@ func run(logger *utils.Logger) error {
 	}
 	logger.Info("Prioritized diff size: %d bytes (~%d tokens)", len(prioritizedDiff), len(prioritizedDiff)/4)
 
-	// --- Review Logic ---
 	review, provider, err := generateReview(ctx, cfg, prioritizedDiff, ghClient, logger)
 	if err != nil {
-		// If the special error is returned, it means the coffee message was already posted.
-		// We should not post another generic error message.
-		if errors.Is(err, errOllamaFailedAfterNotice) {
-			logger.Error("Ollama fallback failed after posting the token limit notice. No further comment will be posted.")
-			return err
-		}
 		logger.Error("All review providers failed. Posting static fallback. Final error: %v", err)
 		review = generateFallbackReview(prioritizedDiff, err.Error())
 		provider = "static-fallback"
 	}
 
-	// Post the final review comment, but only if there's content to post.
-	if review != "" {
-		if err := ghClient.PostComment(ctx, cfg.PRNumber, review); err != nil {
-			return fmt.Errorf("failed to post final comment: %w", err)
-		}
-		logger.Info("Posted review using provider: %s", provider)
-		logger.GitHubOutput("review-posted", "true")
-		logger.GitHubOutput("review-provider", provider)
-	} else {
-		logger.Info("No final review content to post.")
-		logger.GitHubOutput("review-posted", "false")
+	// Post the final review comment
+	if err := ghClient.PostComment(ctx, cfg.PRNumber, review); err != nil {
+		return fmt.Errorf("failed to post final comment: %w", err)
 	}
 
+	logger.Info("Posted review using provider: %s", provider)
+	logger.GitHubOutput("review-posted", "true")
+	logger.GitHubOutput("review-provider", provider)
 	return nil
+}
+
+func handleMultiReview(ctx context.Context, cfg *config.Config, ghClient *github.Client, diffAnalyzer diff.Analyzer, logger *utils.Logger) error {
+	analyses, err := diffAnalyzer.AnalyzeFiles(cfg.BaseRef, cfg.HeadRef)
+	if err != nil {
+		return fmt.Errorf("failed to analyze files for chunking: %w", err)
+	}
+
+	chunks := splitAnalysesIntoChunks(analyses, ChunkTargetTokens)
+	logger.Info("Split files into %d chunks.", len(chunks))
+
+	for i, chunk := range chunks {
+		logger.Info("Processing chunk %d/%d with %d files (~%d tokens)...", i+1, len(chunks), len(chunk.Analyses), chunk.TotalTokens)
+
+		diff, err := diffAnalyzer.BuildDiffFromAnalyses(chunk.Analyses, cfg.BaseRef, cfg.HeadRef)
+		if err != nil {
+			logger.Error("Failed to build diff for chunk %d: %v. Skipping.", i+1, err)
+			continue
+		}
+
+		review, provider, err := generateReview(ctx, cfg, diff, ghClient, logger)
+		if err != nil {
+			logger.Error("Failed to generate review for chunk %d: %v. Posting fallback.", i+1, err)
+			review = generateFallbackReview(diff, err.Error())
+			provider = "static-fallback"
+		}
+
+		// Add a header to each review comment
+		reviewHeader := fmt.Sprintf("## 🧩 Code Review (Part %d/%d)\n\n", i+1, len(chunks))
+		finalReview := reviewHeader + review
+
+		if err := ghClient.PostComment(ctx, cfg.PRNumber, finalReview); err != nil {
+			logger.Error("Failed to post comment for chunk %d: %v", i+1, err)
+		} else {
+			logger.Info("Successfully posted review for chunk %d using %s.", i+1, provider)
+		}
+	}
+
+	logger.GitHubOutput("review-posted", "true")
+	logger.GitHubOutput("review-provider", "github-models/chunked")
+	return nil
+}
+
+type AnalysisChunk struct {
+	Analyses    []diff.FileAnalysis
+	TotalTokens int
+}
+
+func splitAnalysesIntoChunks(analyses []diff.FileAnalysis, targetTokens int) []AnalysisChunk {
+	var chunks []AnalysisChunk
+	currentChunk := AnalysisChunk{}
+
+	for _, analysis := range analyses {
+		if currentChunk.TotalTokens > 0 && currentChunk.TotalTokens+analysis.Tokens > targetTokens {
+			chunks = append(chunks, currentChunk)
+			currentChunk = AnalysisChunk{}
+		}
+		currentChunk.Analyses = append(currentChunk.Analyses, analysis)
+		currentChunk.TotalTokens += analysis.Tokens
+	}
+	if len(currentChunk.Analyses) > 0 {
+		chunks = append(chunks, currentChunk)
+	}
+
+	return chunks
 }
 
 func generateReview(ctx context.Context, cfg *config.Config, diff string, ghClient *github.Client, logger *utils.Logger) (string, string, error) {
@@ -106,34 +173,25 @@ func generateReview(ctx context.Context, cfg *config.Config, diff string, ghClie
 
 	// Check if it's a token limit error
 	if errors.Is(err, config.ErrTokenLimitExceeded) {
-		// Post the "coffee" message immediately to notify the user.
+		// Post the friendly "coffee" message
 		coffeeMessage := "Hey, it looks like your PR diff is very big, but don't worry, we got you! Grab a coffee, and before you finish it, your PR review will be ready. ☕"
 		if postErr := ghClient.PostComment(ctx, cfg.PRNumber, coffeeMessage); postErr != nil {
-			// If we can't even post the notice, return the original error.
-			return "", "", fmt.Errorf("failed to post token limit notice: %w", postErr)
+			logger.Error("Failed to post 'coffee' comment: %v", postErr)
 		}
-		logger.Info("✅ Posted token limit 'coffee' message.")
 	}
 
 	// Attempt 2: Ollama Fallback
 	if cfg.UseOllamaFallback {
 		logger.Info("🔄 Attempting review with Ollama fallback (%s)...", cfg.OllamaModel)
-		ollamaReview, ollamaErr := tryOllamaFallback(ctx, cfg, diff, logger)
-		if ollamaErr == nil {
-			// Success: return the Ollama review content to be posted by run().
+		ollamaReview, err := tryOllamaFallback(ctx, cfg, diff, logger)
+		if err == nil {
 			return ollamaReview, "ollama", nil
 		}
-		// If Ollama fails, log its specific error.
-		logger.Error("Ollama fallback also failed: %v", ollamaErr)
-		// If we already posted the coffee message, return the special error.
-		if errors.Is(err, config.ErrTokenLimitExceeded) {
-			return "", "", errOllamaFailedAfterNotice
-		}
-		return "", "", ollamaErr
+		logger.Error("Ollama fallback also failed: %v", err)
+		return "", "", err // Return the last error
 	}
 
-	// If Ollama fallback is disabled or failed without a prior coffee message, return the original error.
-	return "", "", err
+	return "", "", err // Return the original error if Ollama is disabled
 }
 
 func tryGitHubModels(cfg *config.Config, diff string, logger *utils.Logger) (string, error) {
